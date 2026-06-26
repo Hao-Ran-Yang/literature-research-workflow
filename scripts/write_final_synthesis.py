@@ -13,6 +13,7 @@ if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
 
 from parse_reading_notes import parse_notes  # noqa: E402
+from registry_utils import is_active_artifact  # noqa: E402
 from workflow_safety import require_write_permission  # noqa: E402
 
 
@@ -63,8 +64,7 @@ def resolve_synthesis_inputs(root: Path, skim_notes: str, deep_notes: str, candi
             for item in registry["artifacts"]:
                 if not isinstance(item, dict):
                     continue
-                status = item.get("status") or item.get("quality_status", "accepted")
-                if status not in {"accepted", "active"}:
+                if not is_active_artifact(item):
                     continue
                 artifact_type = item.get("artifact_type") or item.get("type")
                 rel = item.get("path", "")
@@ -85,10 +85,10 @@ def resolve_synthesis_inputs(root: Path, skim_notes: str, deep_notes: str, candi
                 resolved[key] = sorted(set(resolved[key]), key=lambda path: path.as_posix())
             return resolved
     return {
-        "layout": "legacy",
-        "skim_notes": [resolved_note_path(root, skim_notes)],
-        "deep_notes": [resolved_note_path(root, deep_notes)],
-        "candidate_tables": [resolved_note_path(root, candidates)],
+        "layout": "current-empty",
+        "skim_notes": [],
+        "deep_notes": [],
+        "candidate_tables": [],
         "overviews": [],
     }
 
@@ -299,15 +299,13 @@ def collect_selected_deep_method_comparisons(parsed: dict, limit: int = 120) -> 
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Create final synthesis draft files from inventory and parsed notes.")
+    parser = argparse.ArgumentParser(description="Create final synthesis draft files from active registry artifacts.")
     parser.add_argument("--inventory", default="phase1_inventory.csv")
-    parser.add_argument("--notes", default="", help="Legacy alias for --legacy-notes.")
-    parser.add_argument("--skim-notes", default="phase2_skim_notes.md")
-    parser.add_argument("--deep-notes", default="phase3_deep_notes.md")
-    parser.add_argument("--legacy-notes", default="phase2_reading_notes.md")
+    parser.add_argument("--skim-notes", default="phase2_skim_notes.md", help=argparse.SUPPRESS)
+    parser.add_argument("--deep-notes", default="phase3_deep_notes.md", help=argparse.SUPPRESS)
     parser.add_argument("--output-dir", default=".")
     parser.add_argument("--parsed-output", default="phase2_reading_notes.parsed.json")
-    parser.add_argument("--candidates", default="phase2_deep_reading_candidates.csv")
+    parser.add_argument("--candidates", default="phase2_deep_reading_candidates.csv", help=argparse.SUPPRESS)
     parser.add_argument("--phase2-root", default="phase2_papers")
     parser.add_argument("--overwrite", action="store_true")
     parser.add_argument("--allow-write", action="store_true")
@@ -320,8 +318,6 @@ def main() -> None:
     rows = read_inventory(inventory_path)
     synthesis_inputs = resolve_synthesis_inputs(out, args.skim_notes, args.deep_notes, args.candidates)
     note_inputs = []
-    if synthesis_inputs["layout"] == "legacy":
-        note_inputs.append(("legacy-deep", resolved_note_path(out, args.notes or args.legacy_notes)))
     note_inputs.extend(("skim", path) for path in synthesis_inputs["skim_notes"])
     note_inputs.extend(("selected-deep", path) for path in synthesis_inputs["deep_notes"])
     parsed, source_counts = merge_parsed_notes(note_inputs)
@@ -339,6 +335,8 @@ def main() -> None:
         row for row in candidates if (row.get("selected_for_phase3") or "").strip().lower() not in {"yes", "no"}
     ]
     deep_manifest = read_json_if_exists(out / args.phase2_root / "phase3_deep_text_manifest.json")
+    if not isinstance(deep_manifest, list):
+        deep_manifest = []
     accepted_deep_failures = accepted_deep_failure_rows(out, deep_manifest)
     accepted_deep_failure_ids = {row[0] for row in accepted_deep_failures}
     deep_failures = [
@@ -391,7 +389,7 @@ def main() -> None:
                 f"- Inventory papers: {len(rows)}",
                 f"- Reading-note entries parsed: {parsed['summary']['paper_entries']}",
                 f"- Note entries needing review: {parsed['summary']['needs_review']}",
-                f"- Evidence levels: legacy-deep={source_counts['legacy-deep']}, skim={source_counts['skim']}, selected-deep={source_counts['selected-deep']}",
+                f"- Evidence levels: skim={source_counts.get('skim', 0)}, selected-deep={source_counts.get('selected-deep', 0)}",
                 "- Synthesis policy: selected deep notes override skim notes for the same arXiv ID; skim-level conclusions remain provisional.",
                 "",
                 "## Method Families",

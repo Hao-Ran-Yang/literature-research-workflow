@@ -58,8 +58,8 @@ def scaffold_validation_files(root: Path) -> None:
         path.write_text(content, encoding="utf-8")
 
 
-class ValidateProjectCompatibilityTests(unittest.TestCase):
-    def test_legacy_accepted_note_with_matching_hash_is_warning_not_failure(self) -> None:
+class ValidateProjectCurrentOnlyTests(unittest.TestCase):
+    def test_active_noncanonical_batch_note_fails_validation(self) -> None:
         harness = load_script("awesome_literature_harness.py")
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -75,9 +75,26 @@ class ValidateProjectCompatibilityTests(unittest.TestCase):
 
             result = harness.validate_project(root)
 
+            self.assertEqual(result["status"], "failed", result)
+            self.assertTrue(any("missing canonical heading" in error for error in result["errors"]), result)
+
+    def test_archived_noncanonical_batch_note_is_ignored(self) -> None:
+        harness = load_script("awesome_literature_harness.py")
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            scaffold_validation_files(root)
+            note = root / "notes/accepted/B01.md"
+            note.parent.mkdir(parents=True)
+            note.write_text("---\nartifact_type: batch_skim_note\nbatch: B01\npaper_ids:\n  - arxiv:2401.00001\n---\n## Legacy paper\nLegacy prose.\n", encoding="utf-8")
+            digest = hashlib.sha256(note.read_bytes()).hexdigest()
+            write_registry(root, [{
+                "type": "note", "artifact_type": "batch_skim_note", "path": "notes/accepted/B01.md",
+                "batch": "B01", "paper_ids": ["arxiv:2401.00001"], "status": "archived", "content_hash": digest,
+            }])
+
+            result = harness.validate_project(root)
+
             self.assertEqual(result["status"], "passed", result)
-            self.assertFalse(any("canonical" in error or "traceable" in error for error in result["errors"]))
-            self.assertTrue(any("legacy accepted note" in warning for warning in result["warnings"]), result)
 
 
 class CandidateResolverTests(unittest.TestCase):
@@ -156,14 +173,16 @@ class FinalInputAggregationTests(unittest.TestCase):
             self.assertEqual(len(inputs["candidate_tables"]), 1)
             self.assertEqual(len(inputs["overviews"]), 1)
 
-    def test_legacy_layout_uses_flat_files(self) -> None:
+    def test_missing_registry_does_not_fallback_to_flat_files(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             for name in ("phase2_skim_notes.md", "phase3_deep_notes.md", "phase2_deep_reading_candidates.csv"):
                 (root / name).write_text("x\n", encoding="utf-8")
             inputs = self.final.resolve_synthesis_inputs(root, "phase2_skim_notes.md", "phase3_deep_notes.md", "phase2_deep_reading_candidates.csv")
-            self.assertEqual(inputs["layout"], "legacy")
-            self.assertEqual(inputs["skim_notes"], [root / "phase2_skim_notes.md"])
+            self.assertEqual(inputs["layout"], "current-empty")
+            self.assertEqual(inputs["skim_notes"], [])
+            self.assertEqual(inputs["deep_notes"], [])
+            self.assertEqual(inputs["candidate_tables"], [])
 
 
 class RegistrySchemaTests(unittest.TestCase):
@@ -173,7 +192,7 @@ class RegistrySchemaTests(unittest.TestCase):
             "schema_version": "2.0", "version": 2,
             "artifacts": [{
                 "type": "note", "artifact_type": "batch_skim_note", "path": "notes/accepted/B01.md",
-                "batch": "B01", "paper_ids": ["arxiv:2401.00001"], "status": "accepted",
+                "batch": "B01", "paper_ids": ["arxiv:2401.00001"], "status": "active",
                 "review_status": "clean", "warning_codes": [], "content_hash": "a" * 64,
             }],
         }

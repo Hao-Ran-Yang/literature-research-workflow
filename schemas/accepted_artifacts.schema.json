@@ -2,49 +2,25 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://codex.local/literature-research-workflow/accepted_artifacts.schema.json",
   "title": "Accepted Literature Artifacts Registry",
-  "description": "Advisory contract for batches/accepted_artifacts.json. New projects should use structured v2 entries; legacy string/list registries remain readable.",
-  "oneOf": [
-    {
+  "description": "Current-only contract for batches/accepted_artifacts.json. Registries are structured v2 objects; artifact lifecycle is controlled by status.",
+  "type": "object",
+  "additionalProperties": true,
+  "properties": {
+    "version": {
+      "type": ["integer", "string"]
+    },
+    "artifacts": {
       "type": "array",
       "items": {
-        "oneOf": [
-          {
-            "type": "string"
-          },
-          {
-            "$ref": "#/$defs/artifactEntry"
-          }
-        ]
-      }
-    },
-    {
-      "type": "object",
-      "additionalProperties": true,
-      "properties": {
-        "version": {
-          "type": ["integer", "string"]
-        },
-        "artifacts": {
-          "type": "array",
-          "items": {
-            "oneOf": [
-              {
-                "type": "string"
-              },
-              {
-                "$ref": "#/$defs/artifactEntry"
-              }
-            ]
-          }
-        }
+        "$ref": "#/$defs/artifactEntry"
       }
     }
-  ],
+  },
   "$defs": {
     "artifactEntry": {
       "type": "object",
       "additionalProperties": true,
-      "required": ["type", "path"],
+      "required": ["type", "path", "status"],
       "properties": {
         "type": {
           "type": "string",
@@ -94,6 +70,10 @@
         "quality_status": {
           "type": "string",
           "enum": ["accepted", "warning", "failed", "superseded", "unknown"]
+        },
+        "status": {
+          "type": "string",
+          "enum": ["active", "superseded", "archived"]
         },
         "registered_at": {
           "type": "string"

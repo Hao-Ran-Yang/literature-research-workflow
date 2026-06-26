@@ -29,105 +29,6 @@ def load_rows_from_inventory(path: Path, batch: str) -> list[dict]:
     return rows
 
 
-def legacy_stub_for(row: dict, index: int) -> str:
-    title = row.get("title") or row.get("arxiv_id") or f"Paper {index}"
-    arxiv_id = row.get("arxiv_id", "")
-    version = row.get("latest_version_date", "")
-    pdf_path = row.get("pdf_path", "")
-    return f"""#### {index}. {title}
-
-1. **Basic information**
-   - arXiv: {arxiv_id}
-   - Version/date: {version}
-   - Category: {row.get("method_category", "")}
-   - Application: {row.get("application_tag", "")}
-   - PDF/body text: {pdf_path}
-
-2. **Research problem**
-   - Problem statement:
-   - Essential question:
-   - Mathematical view:
-   - Frontier position:
-   - Applications and potential:
-   - [Paper-stated]
-   - [Interpretation]
-   - [Evidence]
-   - [Needs verification]
-
-3. **Existing methods and novelty**
-   - Existing approach:
-   - What it achieves:
-   - Limitation:
-   - Innovation over prior work:
-   - Remaining unresolved aspects:
-   - [Paper-stated]
-   - [Interpretation]
-   - [Evidence]
-   - [Needs verification]
-
-4. **Motivation and core idea**
-   - Motivation:
-   - Why this direction may work:
-   - Core intuition:
-   - Method preview:
-   - [Paper-stated]
-   - [Interpretation]
-   - [Evidence]
-   - [Needs verification]
-
-5. **Method details**
-   - [Paper-stated]
-   - Problem formulation:
-   - Objective:
-   - Optimization:
-   - Inference flow:
-   - Assumptions:
-   - [Interpretation]
-   - [Evidence]
-   - [Needs verification]
-
-6. **Theoretical claims**
-   - [Paper-stated]
-   - [Interpretation]
-   - [Evidence]
-   - [Needs verification]
-
-7. **Experiments**
-   - Models:
-   - Datasets:
-   - Baselines:
-   - Metrics:
-   - Key numbers:
-   - [Paper-stated]
-   - [Interpretation]
-   - [Evidence]
-   - [Needs verification]
-
-8. **Strengths**
-
-9. **Weaknesses and assumptions**
-   - [Paper-stated]
-   - [Interpretation]
-   - [Evidence]
-   - [Needs verification]
-
-10. **Relation to my interests**
-   - [Interpretation]
-
-11. **Possible research extensions**
-   - [Research idea]
-   - Motivation:
-   - Verification experiment:
-   - Main risk:
-   - Confidence: low / medium / high
-   - [Needs verification]
-
-12. **One-sentence takeaway**
-   - [Interpretation]
-
-"""
-
-
 def normalized_arxiv_id(value: str) -> str:
     value = re.sub(r"^arxiv[:\s]*", "", value or "", flags=re.IGNORECASE)
     return re.sub(r"v\d+$", "", value, flags=re.IGNORECASE)
@@ -162,7 +63,6 @@ def selected_ids(path: Path) -> set[str]:
 
 def template_stub_for(row: dict, index: int, template_name: str) -> str:
     template_files = {
-        "phase2-skim": "phase2_skim_note.md",
         "phase3-deep": "phase3_deep_note.md",
     }
     template = (TEMPLATE_DIR / template_files[template_name]).read_text(encoding="utf-8")
@@ -184,13 +84,6 @@ def template_stub_for(row: dict, index: int, template_name: str) -> str:
 
 
 def markdown_for(rows: list[dict], batch: str, heading: str | None, template: str) -> str:
-    if template != "phase3-deep":
-        selected_heading = heading or (f"{batch} Skim Note Stubs" if template == "phase2-skim" else f"{batch} Note Stubs")
-        stubs = []
-        for idx, row in enumerate(rows, start=1):
-            stubs.append(legacy_stub_for(row, idx) if template == "legacy-v3" else template_stub_for(row, idx, template))
-        return "## " + selected_heading + "\n\n" + "".join(stubs)
-
     grouped: dict[str, list[dict]] = defaultdict(list)
     for row in rows:
         grouped[batch_code(row.get("reading_batch", "")) or "Selected"].append(row)
@@ -212,9 +105,9 @@ def main() -> None:
     parser.add_argument("--heading", help="Markdown heading for the batch.")
     parser.add_argument(
         "--template",
-        choices=["legacy-v3", "phase2-skim", "phase3-deep"],
-        default="legacy-v3",
-        help="Stub format. The default preserves the historical direct-call behavior.",
+        choices=["phase3-deep"],
+        default="phase3-deep",
+        help="Stub format for current promoted Phase 3 deep notes.",
     )
     parser.add_argument("--candidates", help="Optional candidate CSV. Phase 3 uses rows selected with selected_for_phase3=yes.")
     parser.add_argument("--overwrite", action="store_true")

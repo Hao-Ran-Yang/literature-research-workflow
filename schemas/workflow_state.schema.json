@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://codex.local/literature-research-workflow/workflow_state.schema.json",
   "title": "Literature Research Workflow State",
-  "description": "Advisory contract for the state of a literature-review-centered research workflow project. It is intentionally permissive so older projects can be inspected without migration; arXiv remains one supported source family.",
+  "description": "Advisory contract for the state of a current template-v2 literature-review-centered research workflow project; arXiv remains one supported source family.",
   "type": "object",
   "additionalProperties": true,
   "properties": {
@@ -17,16 +17,16 @@
       "enum": ["phase0", "phase1", "phase2", "phase3", "final", "unknown"]
     },
     "workflow_mode": {
-      "description": "Detected compatibility mode.",
+      "description": "Detected current workflow mode.",
       "type": "string",
-      "enum": ["three_stage", "legacy", "hybrid"]
+      "enum": ["three_stage"]
     },
     "root": {
       "description": "Project root path.",
       "type": "string"
     },
     "inventory_path": {
-      "description": "Path to the inventory CSV, often phase1_inventory.csv or an older phase1*_inventory.csv name.",
+      "description": "Path to the inventory CSV.",
       "type": ["string", "null"]
     },
     "phase1_report_path": {
@@ -34,7 +34,7 @@
       "type": ["string", "null"]
     },
     "notes_path": {
-      "description": "Path to appended Phase 2 reading notes.",
+      "description": "Path to current Phase 2 reading notes.",
       "type": ["string", "null"]
     },
     "raw_papers_dir": {
@@ -110,7 +110,7 @@
       "additionalProperties": true
     },
     "phase2": {
-      "description": "Skim-reading or legacy Phase 2 summary.",
+      "description": "Current skim-reading Phase 2 summary.",
       "type": "object",
       "additionalProperties": true
     },

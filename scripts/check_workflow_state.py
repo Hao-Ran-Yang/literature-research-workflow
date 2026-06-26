@@ -5,6 +5,7 @@ import re
 from collections import Counter, defaultdict
 from pathlib import Path
 
+from registry_utils import is_active_artifact
 
 ENTRY_RE = re.compile(r"^####\s+", re.MULTILINE)
 HEADING_RE = re.compile(r"^##\s+(.+)$", re.MULTILINE)
@@ -35,7 +36,7 @@ def resolve_inventory(root: Path, requested: str) -> Path:
 
 
 def is_template_v2(root: Path) -> bool:
-    return (root / "inventory").is_dir() and (root / "batches" / "accepted_artifacts.json").exists()
+    return (root / "inventory" / "workflow_inventory.csv").exists() and (root / "batches" / "accepted_artifacts.json").exists()
 
 
 def rel_or_requested(root: Path, path: Path, requested: str) -> str:
@@ -102,8 +103,7 @@ def accepted_phase1_report(root: Path) -> bool:
         if not isinstance(item, dict):
             continue
         kind = item.get("artifact_type") or item.get("type")
-        status = item.get("status") or item.get("quality_status", "accepted")
-        if (kind == "phase1_report" or (kind == "overview" and "phase1" in str(item.get("path", "")).lower())) and status == "accepted":
+        if (kind == "phase1_report" or (kind == "overview" and "phase1" in str(item.get("path", "")).lower())) and is_active_artifact(item):
             return True
     return False
 
@@ -163,8 +163,7 @@ def registry_skim_ids_by_batch(root: Path) -> dict[str, set[str]]:
         if not isinstance(item, dict):
             continue
         kind = item.get("artifact_type") or item.get("type")
-        status = item.get("status") or item.get("quality_status", "accepted")
-        if kind not in {"batch_skim_note", "micro_batch_skim_note"} or status != "accepted":
+        if kind not in {"batch_skim_note", "micro_batch_skim_note"} or not is_active_artifact(item):
             continue
         code = batch_code(item.get("batch", ""))
         if not code:
@@ -247,20 +246,6 @@ def new_batch_status(expected: int, manifest_exists: bool, pdfs: int, bodies: in
     return "planned"
 
 
-def legacy_batch_status(expected: int, manifest_exists: bool, pdfs: int, bodies: int, notes: int) -> str:
-    if expected <= 0:
-        return "empty"
-    if notes >= expected:
-        return "notes_complete"
-    if bodies >= expected:
-        return "ready_for_reading"
-    if pdfs >= expected:
-        return "pdfs_valid"
-    if manifest_exists:
-        return "manifest_ready"
-    return "planned"
-
-
 def read_candidates(path: Path) -> list[dict]:
     if not path.exists():
         return []
@@ -274,8 +259,7 @@ def accepted_candidate_table_path(root: Path, requested: Path) -> Path:
         return requested
     for item in registry.get("artifacts", []):
         artifact_type = item.get("artifact_type") or item.get("type")
-        status = item.get("status") or item.get("quality_status", "accepted")
-        if artifact_type != "candidate_table" or status != "accepted":
+        if artifact_type != "candidate_table" or not is_active_artifact(item):
             continue
         rel = item.get("path", "")
         if not rel:
@@ -292,9 +276,8 @@ def accepted_skim_overview_path(root: Path, requested: Path) -> Path:
         return requested
     for item in registry.get("artifacts", []):
         artifact_type = item.get("artifact_type") or item.get("type")
-        status = item.get("status") or item.get("quality_status", "accepted")
         rel = item.get("path", "")
-        if artifact_type != "overview" or status != "accepted" or not rel:
+        if artifact_type != "overview" or not is_active_artifact(item) or not rel:
             continue
         if "phase1_report" in rel.lower():
             continue
@@ -311,8 +294,7 @@ def accepted_candidate_batch(root: Path, candidates_path: Path) -> str:
     rel_target = candidates_path.relative_to(root).as_posix() if candidates_path.is_relative_to(root) else candidates_path.as_posix()
     for item in registry.get("artifacts", []):
         artifact_type = item.get("artifact_type") or item.get("type")
-        status = item.get("status") or item.get("quality_status", "accepted")
-        if artifact_type == "candidate_table" and status == "accepted" and item.get("path") == rel_target:
+        if artifact_type == "candidate_table" and is_active_artifact(item) and item.get("path") == rel_target:
             return batch_code(item.get("batch", ""))
     return ""
 
@@ -324,9 +306,8 @@ def accepted_deep_note_path(root: Path, requested: Path, batch: str = "") -> Pat
     candidates = []
     for item in registry.get("artifacts", []):
         artifact_type = item.get("artifact_type") or item.get("type")
-        status = item.get("status") or item.get("quality_status", "accepted")
         label = str(item.get("artifact_label", ""))
-        if status != "accepted":
+        if not is_active_artifact(item):
             continue
         if artifact_type not in {"phase3_deep_note", "note"}:
             continue
@@ -436,8 +417,6 @@ def choose_next_action(rows: list[dict], batches: dict[str, dict], phase1_report
             return f"write notes for {code}"
         if status in {"ready_for_skim", "skim_started"}:
             return f"write skim notes for {code}"
-    if workflow_mode == "legacy":
-        return "complete" if final_ready else "write final synthesis"
     if not overview_exists or not candidates_exists:
         return "write phase2 skim overview"
     if phase3["status"] == "awaiting_selection_review":
@@ -460,8 +439,6 @@ def main() -> None:
     parser.add_argument("--skim-overview", default="phase2_skim_overview.md")
     parser.add_argument("--candidates", default="phase2_deep_reading_candidates.csv")
     parser.add_argument("--deep-notes", default="phase3_deep_notes.md")
-    parser.add_argument("--legacy-notes", default="phase2_reading_notes.md")
-    parser.add_argument("--notes", default="", help="Legacy alias for --legacy-notes.")
     args = parser.parse_args()
 
     root = Path(args.root).resolve()
@@ -478,7 +455,6 @@ def main() -> None:
     deep_notes_path = root / args.deep_notes
     if template_v2:
         deep_notes_path = accepted_deep_note_path(root, deep_notes_path, phase3_batch)
-    legacy_notes_path = root / (args.notes or args.legacy_notes)
     rows = read_inventory(inventory_path)
     inventory_batch_by_id = {
         normalized_arxiv_id(row.get("arxiv_id", "")): batch_code(row.get("reading_batch", ""))
@@ -489,13 +465,10 @@ def main() -> None:
     registry_skim_ids = registry_skim_ids_by_batch(root)
     for code, ids in registry_skim_ids.items():
         skim_ids_by_batch.setdefault(code, set()).update(ids)
-    legacy_ids_by_batch = note_ids_by_batch(legacy_notes_path, inventory_batch_by_id)
     deep_ids_by_batch = note_ids_by_batch(deep_notes_path, inventory_batch_by_id)
     skim_counts = {code: len(ids) for code, ids in skim_ids_by_batch.items()}
-    legacy_counts = {code: len(ids) for code, ids in legacy_ids_by_batch.items()}
     has_new_files = any(has_substantive_content(path) for path in [skim_notes_path, overview_path, candidates_path, deep_notes_path])
-    has_legacy = any(legacy_counts.values())
-    workflow_mode = "hybrid" if has_new_files and has_legacy else ("three_stage" if has_new_files or not has_legacy else "legacy")
+    workflow_mode = "three_stage"
 
     grouped: dict[str, list[dict]] = defaultdict(list)
     for row in rows:
@@ -515,17 +488,12 @@ def main() -> None:
         pdfs = count_valid_pdfs(normalized_manifest)
         bodies = count_body_texts(normalized_manifest)
         skim_ids = skim_ids_by_batch.get(code, set())
-        legacy_ids = legacy_ids_by_batch.get(code, set())
         deep_ids = deep_ids_by_batch.get(code, set())
-        batch_mode = "legacy" if legacy_ids and not skim_ids else ("three_stage" if workflow_mode != "legacy" else "legacy")
-        effective_ids = deep_ids | skim_ids | legacy_ids
-        notes = len(legacy_ids) if batch_mode == "legacy" else len(skim_ids)
+        batch_mode = "three_stage"
+        effective_ids = deep_ids | skim_ids
+        notes = len(skim_ids)
         expected = len(batch_rows)
-        status = (
-            new_batch_status(expected, manifest_path.exists(), pdfs, bodies, notes)
-            if batch_mode == "three_stage"
-            else legacy_batch_status(expected, manifest_path.exists(), pdfs, bodies, notes)
-        )
+        status = new_batch_status(expected, manifest_path.exists(), pdfs, bodies, notes)
         batches[code] = {
             "papers": expected,
             "manifest": manifest_path.exists(),
@@ -536,7 +504,6 @@ def main() -> None:
             "notes_entries": notes,
             "effective_notes_entries": len(effective_ids),
             "skim_notes_entries": skim_counts.get(code, 0),
-            "legacy_notes_entries": legacy_counts.get(code, 0),
             "deep_notes_entries": len(deep_ids),
             "workflow_mode": batch_mode,
             "status": status,
@@ -562,7 +529,6 @@ def main() -> None:
         directory_has_files(root / "raw_papers")
         or directory_has_files(phase2_root)
         or has_substantive_content(skim_notes_path)
-        or has_substantive_content(legacy_notes_path)
     )
     skim_started = bool(any(skim_counts.values()) or has_substantive_content(skim_notes_path))
     three_stage_batches = [item for item in batches.values() if item["workflow_mode"] == "three_stage"]
@@ -577,7 +543,7 @@ def main() -> None:
 
     state = {
         "root": str(root),
-        "layout": "template-v2" if template_v2 else "legacy-compatible",
+        "layout": "template-v2" if template_v2 else "current-incomplete",
         "workflow_mode": workflow_mode,
         "phase1": {
             "inventory_exists": inventory_path.exists(),
@@ -606,13 +572,7 @@ def main() -> None:
             "skim_complete": skim_complete,
             "skim_notes_path": str(skim_notes_path) if skim_notes_path.exists() else "",
             "skim_overview_path": str(overview_path) if overview_path.exists() else "",
-            "legacy_notes_path": str(legacy_notes_path) if legacy_notes_path.exists() else "",
             "missing_files": [],
-        },
-        "legacy": {
-            "phase2_reading_notes_present": has_substantive_content(legacy_notes_path),
-            "phase2_reading_notes_path": str(legacy_notes_path) if legacy_notes_path.exists() else "",
-            "notes_entries": sum(legacy_counts.values()),
         },
         "phase3": phase3,
         "final_synthesis": {

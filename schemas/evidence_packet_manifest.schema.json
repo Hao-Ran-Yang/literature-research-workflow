@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://codex.local/literature-research-workflow/evidence_packet_manifest.schema.json",
   "title": "Evidence Packet Manifest",
-  "description": "Advisory contract for Phase 2 evidence packet manifests. Supports template-v2 paper_id packet manifests and legacy arxiv_id packet manifests.",
+  "description": "Advisory contract for current Phase 2 evidence packet manifests. Template-v2 packet manifests use stable paper_id values.",
   "type": "object",
   "additionalProperties": true,
   "required": ["batch", "packets"],

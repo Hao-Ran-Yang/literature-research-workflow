@@ -9,6 +9,7 @@ import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
 
+from registry_utils import is_active_artifact, lifecycle_status, normalize_artifact_entry
 from workflow_safety import atomic_write_csv, atomic_write_json, atomic_write_text, require_network_permission, require_write_permission
 
 
@@ -262,7 +263,7 @@ def read_json(path: Path):
 
 
 def is_template_v2(root: Path) -> bool:
-    return (root / "inventory" / "workflow_inventory.csv").exists() or (root / "batches" / "accepted_artifacts.json").exists()
+    return (root / "inventory" / "workflow_inventory.csv").exists() and (root / "batches" / "accepted_artifacts.json").exists()
 
 
 def inventory_path(root: Path) -> Path:
@@ -298,6 +299,7 @@ def load_registry(root: Path) -> dict:
     data.setdefault("artifacts", [])
     if not isinstance(data["artifacts"], list):
         data["artifacts"] = []
+    data["artifacts"] = [normalize_artifact_entry(item) if isinstance(item, dict) else item for item in data["artifacts"]]
     return data
 
 
@@ -310,7 +312,8 @@ def register_artifact_record(root: Path, entry: dict, force: bool = False) -> di
     artifacts = registry["artifacts"]
     entry.setdefault("schema_version", SCHEMA_VERSION)
     entry.setdefault("created_at", now_iso())
-    entry.setdefault("status", "accepted")
+    entry = normalize_artifact_entry(entry, for_write=True)
+    entry.setdefault("status", "active")
     path = project_path(root, entry.get("path", ""))
     if not path.exists():
         return {"registered": False, "status": "error", "errors": [f"artifact path does not exist: {entry.get('path', '')}"]}
@@ -715,7 +718,7 @@ def init_from_awesome(args) -> dict:
     # Scaffold is idempotent and vendors local workflow files for template-v2 projects.
     scaffold = Path(__file__).resolve().parent / "scaffold_literature_project.py"
     subprocess.run([getattr(args, "python", "python"), str(scaffold), "--root", str(root), "--allow-write"], check=True, text=True, capture_output=True)
-    accepted_phase1 = any((item.get("artifact_type") or item.get("type")) == "phase1_report" and item.get("status", "accepted") == "accepted" for item in load_registry(root).get("artifacts", []))
+    accepted_phase1 = any((item.get("artifact_type") or item.get("type")) == "phase1_report" and is_active_artifact(item) for item in load_registry(root).get("artifacts", []))
     if accepted_phase1 and not getattr(args, "force", False):
         return {"status": "blocked", "reason": "phase1_already_accepted", "next_action": "create_new_snapshot_or_rerun_with_force", "errors": []}
     base, commit, _included = fetch_or_collect_source(args, root)
@@ -767,7 +770,13 @@ def validate_project(root: Path) -> dict:
     warnings = []
     template_v2 = is_template_v2(root)
     if not template_v2:
-        return {"status": "legacy_compatible", "template_v2": False, "warnings": ["legacy project; strict template-v2 validation skipped"], "errors": []}
+        return {
+            "status": "failed",
+            "template_v2": False,
+            "papers": 0,
+            "warnings": [],
+            "errors": ["current template-v2 project requires both inventory/workflow_inventory.csv and batches/accepted_artifacts.json"],
+        }
     required = [
         inventory_path(root),
         source_items_path(root),
@@ -807,15 +816,15 @@ def validate_project(root: Path) -> dict:
     for item in registry.get("artifacts", []):
         rel = item.get("path", "")
         artifact_type = item.get("artifact_type") or item.get("type")
-        status = item.get("status") or item.get("quality_status", "accepted")
+        status = lifecycle_status(item)
         if rel.startswith(("notes/drafts/", "reports/drafts/", "candidates/drafts/")):
             errors.append(f"accepted artifact points to draft path: {rel}")
         path = project_path(root, rel)
-        if rel and not path.exists():
+        if status == "active" and rel and not path.exists():
             errors.append(f"registry path missing: {rel}")
-        if status != "superseded" and path.exists() and item.get("content_hash") and item.get("content_hash") != content_hash(path):
+        if status == "active" and path.exists() and item.get("content_hash") and item.get("content_hash") != content_hash(path):
             errors.append(f"registry hash mismatch: {rel}")
-        if path.exists() and artifact_type == "batch_skim_note" and status == "accepted":
+        if path.exists() and artifact_type == "batch_skim_note" and status == "active":
             text = path.read_text(encoding="utf-8", errors="replace")
             fm, body = parse_frontmatter(text)
             for note_error in batch_note_paper_coverage_errors(body, fm.get("paper_ids")):
@@ -1482,7 +1491,7 @@ def import_local_pdfs(args) -> dict:
 def accepted_micro_batches(root: Path, batch: str) -> set[str]:
     accepted = set()
     for item in load_registry(root).get("artifacts", []):
-        if item.get("artifact_type") == "micro_batch_skim_note" and item.get("batch") == batch and item.get("status", "accepted") == "accepted":
+        if item.get("artifact_type") == "micro_batch_skim_note" and item.get("batch") == batch and is_active_artifact(item):
             accepted.add(item.get("micro_batch", ""))
     return accepted
 
@@ -1492,7 +1501,7 @@ def accepted_paper_ids(root: Path, batch: str) -> set[str]:
     for item in load_registry(root).get("artifacts", []):
         if item.get("artifact_type") not in {"micro_batch_skim_note", "batch_skim_note"}:
             continue
-        if item.get("batch") != batch or item.get("status", "accepted") != "accepted":
+        if item.get("batch") != batch or not is_active_artifact(item):
             continue
         paper_ids = item.get("paper_ids") or []
         if isinstance(paper_ids, list):
@@ -2243,8 +2252,7 @@ def check_phase3_selection(args) -> dict:
     candidate_paths = []
     for item in registry.get("artifacts", []):
         artifact_type = item.get("artifact_type") or item.get("type")
-        status = item.get("status") or item.get("quality_status", "accepted")
-        if artifact_type not in {"candidate_table", "phase3_candidates"} or status != "accepted":
+        if artifact_type not in {"candidate_table", "phase3_candidates"} or not is_active_artifact(item):
             continue
         if batch and item.get("batch") not in {"", batch}:
             continue

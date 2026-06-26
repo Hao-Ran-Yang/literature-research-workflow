@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://codex.local/literature-research-workflow/deep_reading_candidate.schema.json",
   "title": "Reading-Priority Candidate Row",
-  "description": "Advisory row-level contract for reading-priority candidate tables. Historical phase2_deep_reading_candidates.csv filenames remain valid for compatibility.",
+  "description": "Advisory row-level contract for current reading-priority candidate tables.",
   "type": "object",
   "additionalProperties": true,
   "properties": {

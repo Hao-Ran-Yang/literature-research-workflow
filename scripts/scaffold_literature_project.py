@@ -10,23 +10,6 @@ SKILL_ROOT = Path(__file__).resolve().parents[1]
 WORKFLOW_VENDOR_DIRS = ["scripts", "docs", "schemas", "templates"]
 
 
-DEFAULT_FILES = {
-    "source_links.md": "# Source Links\n\n",
-    "scope.md": "# Scope\n\n## Inclusion\n\n## Exclusion\n\n## Research Lens\n\n",
-    "phase1_inventory.csv": (
-        "section,method_category,application_tag,reading_batch,arxiv_id,title,authors,"
-        "first_submitted,latest_version_date,abs_url,pdf_url,source_url,"
-        "reading_priority,classification_confidence,classification_source,notes\n"
-    ),
-    "phase1_report.md": "# Phase 1 Literature Inventory Report\n\n",
-    "phase2_skim_notes.md": "# Phase 2 Skim Notes\n\n",
-    "final_literature_map.md": "# Final Literature Map\n\n",
-    "key_papers.md": "# Key Papers\n\n",
-    "research_opportunities.md": "# Research Opportunities\n\n",
-    "open_questions.md": "# Open Questions\n\n",
-}
-
-DEFAULT_DIRS = ["raw_papers", "phase2_papers"]
 TEMPLATE_V2_DIRS = [
     "docs",
     "batches",
@@ -113,7 +96,7 @@ TEMPLATE_V2_FILES = {
     "source_links.md": "# Source Links\n\n",
     "scope.md": "# Scope\n\n## Inclusion\n\n## Exclusion\n\n## Research Lens\n\n",
     "docs/workflow_spec.md": "# Project Workflow Spec\n\nUse the skill workflow spec as the default. Record project-local taxonomy, selection policy, source-role policy, and note-template deviations here.\n",
-    "docs/checker_policy.md": "# Checker Policy\n\nNew template-v2 projects should treat registry checks as strict and legacy compatibility checks as advisory unless this file says otherwise.\n",
+    "docs/checker_policy.md": "# Checker Policy\n\nTemplate-v2 projects treat registry checks and current note gates as strict.\n",
     "docs/git_policy.md": "# Git Policy\n\nGit initialization is explicit via `--init-git`. Never commit automatically. Track accepted artifacts, inventory, registry, status, schemas, scripts, docs, and templates. Ignore raw PDFs, extracted body/deep text, packets, and `.codex/` caches.\n",
     "batches/batch_config.csv": "schema_version,batch_id,paper_id,technical_route,batch_goal,selection_mode,max_core_papers,microbatch_size,status,notes\n",
     "batches/reading_plan.md": "# Reading Plan\n\n- schema_version: template-v2.1\n- frozen: no\n\n",
@@ -124,12 +107,6 @@ TEMPLATE_V2_FILES = {
     "inventory/metadata_overrides.csv": "arxiv_id,field,value,source,notes\n",
     "inventory/workflow_inventory.csv": WORKFLOW_INVENTORY_HEADER,
 }
-PHASE1_ONLY_FILES = {
-    key: DEFAULT_FILES[key]
-    for key in ["source_links.md", "scope.md", "phase1_inventory.csv", "phase1_report.md"]
-}
-
-
 def template_path() -> Path:
     return Path(__file__).resolve().parents[1] / "templates" / "literature_project" / "AGENTS.md"
 
@@ -176,9 +153,8 @@ def main() -> None:
     parser.add_argument(
         "--phase1-only",
         action="store_true",
-        help="Create only Phase 1 scaffold files; do not create Phase 2/final placeholders or PDF directories.",
+        help="Compatibility flag; template-v2 scaffold is always created.",
     )
-    parser.add_argument("--legacy-flat", action="store_true", help="Create the legacy flat scaffold instead of template-v2.")
     parser.add_argument("--template-v2", action="store_true", help="Compatibility flag; template-v2 is now the default.")
     parser.add_argument("--vendor-workflow", action="store_true", help="Copy scripts, docs, schemas, and templates into the project.")
     parser.add_argument("--init-git", action="store_true", help="Explicitly run git init in the project root.")
@@ -191,67 +167,39 @@ def main() -> None:
 
     created = []
     skipped = []
-    use_template_v2 = args.template_v2 or not args.legacy_flat
-    vendor_workflow = args.vendor_workflow or use_template_v2
-    if use_template_v2:
-        for dirname in TEMPLATE_V2_DIRS:
-            path = root / dirname
-            if path.exists():
-                skipped.append(str(path))
-            else:
-                path.mkdir(parents=True)
-                created.append(str(path))
-
-        agents_template = template_path()
-        if agents_template.exists():
-            TEMPLATE_V2_FILES["AGENTS.md"] = agents_template.read_text(encoding="utf-8")
+    vendor_workflow = True
+    for dirname in TEMPLATE_V2_DIRS:
+        path = root / dirname
+        if path.exists():
+            skipped.append(str(path))
         else:
-            TEMPLATE_V2_FILES["AGENTS.md"] = "# Literature Project Instructions\n\n"
-        for filename, content in TEMPLATE_V2_FILES.items():
-            if filename == "inventory/source_snapshot.json":
-                continue
-            write_if_allowed(root / filename, content, args.force, created, skipped)
-        snapshot_path = root / "inventory" / "source_snapshot.json"
-        if not snapshot_path.exists() or args.force or not snapshot_path.read_text(encoding="utf-8", errors="replace").strip():
-            atomic_write_json(snapshot_path, {"schema_version": SCHEMA_VERSION, "source_snapshot_id": "", "included_files": [], "excluded_files": []})
-            created.append(str(snapshot_path))
-        registry_path = root / "batches" / "accepted_artifacts.json"
-        if registry_path.exists() and not args.force:
-            skipped.append(str(registry_path))
-        else:
-            atomic_write_json(registry_path, {"schema_version": SCHEMA_VERSION, "version": 2, "artifacts": []})
-            created.append(str(registry_path))
-        if vendor_workflow:
-            for dirname in WORKFLOW_VENDOR_DIRS:
-                copy_tree_if_allowed(SKILL_ROOT / dirname, root / dirname, args.force, created, skipped)
-        if args.init_git:
-            initialize_git(root, created, skipped)
-        print(
-            {
-                "root": str(root),
-                "created": created,
-                "skipped": skipped,
-                "force": args.force,
-                "phase1_only": args.phase1_only,
-                "template_v2": True,
-                "vendor_workflow": vendor_workflow,
-                "init_git": args.init_git,
-            }
-        )
-        return
+            path.mkdir(parents=True)
+            created.append(str(path))
 
-    if not args.phase1_only:
-        for dirname in DEFAULT_DIRS:
-            path = root / dirname
-            if path.exists():
-                skipped.append(str(path))
-            else:
-                path.mkdir(parents=True)
-                created.append(str(path))
-
-    files = PHASE1_ONLY_FILES if args.phase1_only else DEFAULT_FILES
-    for filename, content in files.items():
+    agents_template = template_path()
+    if agents_template.exists():
+        TEMPLATE_V2_FILES["AGENTS.md"] = agents_template.read_text(encoding="utf-8")
+    else:
+        TEMPLATE_V2_FILES["AGENTS.md"] = "# Literature Project Instructions\n\n"
+    for filename, content in TEMPLATE_V2_FILES.items():
+        if filename == "inventory/source_snapshot.json":
+            continue
         write_if_allowed(root / filename, content, args.force, created, skipped)
+    snapshot_path = root / "inventory" / "source_snapshot.json"
+    if not snapshot_path.exists() or args.force or not snapshot_path.read_text(encoding="utf-8", errors="replace").strip():
+        atomic_write_json(snapshot_path, {"schema_version": SCHEMA_VERSION, "source_snapshot_id": "", "included_files": [], "excluded_files": []})
+        created.append(str(snapshot_path))
+    registry_path = root / "batches" / "accepted_artifacts.json"
+    if registry_path.exists() and not args.force:
+        skipped.append(str(registry_path))
+    else:
+        atomic_write_json(registry_path, {"schema_version": SCHEMA_VERSION, "version": 2, "artifacts": []})
+        created.append(str(registry_path))
+    if vendor_workflow:
+        for dirname in WORKFLOW_VENDOR_DIRS:
+            copy_tree_if_allowed(SKILL_ROOT / dirname, root / dirname, args.force, created, skipped)
+    if args.init_git:
+        initialize_git(root, created, skipped)
 
     print(
         {
@@ -260,7 +208,9 @@ def main() -> None:
             "skipped": skipped,
             "force": args.force,
             "phase1_only": args.phase1_only,
-            "template_v2": args.template_v2,
+            "template_v2": True,
+            "vendor_workflow": vendor_workflow,
+            "init_git": args.init_git,
         }
     )
 

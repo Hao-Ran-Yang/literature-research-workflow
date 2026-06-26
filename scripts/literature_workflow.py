@@ -12,6 +12,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from workflow_safety import atomic_write_json
+from registry_utils import is_active_artifact
 from awesome_literature_harness import (
     accept_draft as v2_accept_draft,
     accept_phase1 as v2_accept_phase1,
@@ -119,8 +120,7 @@ def resolve_candidates(root: Path, requested: str, batch: str = "", explicit: bo
         if isinstance(registry, dict):
             for item in registry.get("artifacts", []):
                 artifact_type = item.get("artifact_type") or item.get("type")
-                status = item.get("status") or item.get("quality_status", "accepted")
-                if artifact_type != "candidate_table" or status not in {"accepted", "active"}:
+                if artifact_type != "candidate_table" or not is_active_artifact(item):
                     continue
                 if batch and item.get("batch") != batch:
                     continue
@@ -140,7 +140,7 @@ def resolve_candidates(root: Path, requested: str, batch: str = "", explicit: bo
 
 
 def is_template_v2(root: Path) -> bool:
-    return (root / "inventory").is_dir() and (root / "batches" / "accepted_artifacts.json").exists()
+    return (root / "inventory" / "workflow_inventory.csv").exists() and (root / "batches" / "accepted_artifacts.json").exists()
 
 
 def default_inventory_for(root: Path, requested: str) -> str:
@@ -169,7 +169,7 @@ def resolve_node_command(args) -> dict:
     if getattr(args, "node_command", None):
         return {"command": args.node_command, "source": "cli"}
     if getattr(args, "node", None):
-        return {"command": args.node, "source": "cli-legacy"}
+        return {"command": args.node, "source": "cli-alias"}
     env_node = os.environ.get("LITFLOW_NODE")
     if env_node:
         return {"command": env_node, "source": "env"}
@@ -418,10 +418,6 @@ def batch_code(value: str) -> str:
     return value.split()[0]
 
 
-def legacy_notes_name(args) -> str:
-    return getattr(args, "legacy_notes", "") or args.notes
-
-
 def normalized_arxiv_id(value: str) -> str:
     return re.sub(r"v\d+$", "", value or "", flags=re.IGNORECASE)
 
@@ -583,51 +579,7 @@ def run_batch(args) -> list[dict]:
                 root,
             )
         )
-        if args.write_stubs:
-            steps.append(
-                run(
-                    [
-                        args.python,
-                        script("write_batch_note_stubs.py"),
-                        "--manifest",
-                        str(manifest),
-                        "--output",
-                        str(phase2_root / f"{batch}_skim_note_stubs.md"),
-                        "--template",
-                        "phase2-skim",
-                        "--overwrite",
-                        "--allow-write",
-                    ],
-                    root,
-                )
-            )
     return steps
-
-
-def run_phase2_skim(args) -> list[dict]:
-    root = Path(args.root).resolve()
-    if not args.batch:
-        raise ValueError("--batch is required for --action phase2-skim")
-    manifest = root / args.phase2_root / f"{args.batch}_manifest.json"
-    if not manifest.exists():
-        raise FileNotFoundError(f"batch manifest not found: {manifest}; run --action prepare-batch first")
-    validation = validate_skim_inputs(root, args.inventory, manifest, args.batch)
-    if validation["errors"]:
-        raise ValueError("; ".join(validation["errors"]))
-    command = [
-        args.python,
-        script("write_batch_note_stubs.py"),
-        "--manifest",
-        str(manifest),
-        "--output",
-        str(root / args.phase2_root / f"{args.batch}_skim_note_stubs.md"),
-        "--template",
-        "phase2-skim",
-        "--allow-write",
-    ]
-    if args.overwrite:
-        command.append("--overwrite")
-    return [run(command, root)]
 
 
 def active_artifact_registered(root: Path, artifact_type: str, rel_path: str, batch: str) -> bool:
@@ -638,8 +590,7 @@ def active_artifact_registered(root: Path, artifact_type: str, rel_path: str, ba
     if not isinstance(data, dict):
         return False
     for item in data.get("artifacts", []):
-        status = item.get("status") or item.get("quality_status", "accepted")
-        if status != "accepted":
+        if not is_active_artifact(item):
             continue
         kind = item.get("artifact_type") or item.get("type")
         if kind == artifact_type and item.get("path") == rel_path and item.get("batch") == batch:
@@ -663,9 +614,8 @@ def active_artifact_hash(root: Path, artifact_type: str, rel_path: str, batch: s
     if not isinstance(data, dict):
         return ""
     for item in reversed(data.get("artifacts", [])):
-        status = item.get("status") or item.get("quality_status", "accepted")
         kind = item.get("artifact_type") or item.get("type")
-        if status == "accepted" and kind == artifact_type and item.get("path") == rel_path and item.get("batch") == batch:
+        if is_active_artifact(item) and kind == artifact_type and item.get("path") == rel_path and item.get("batch") == batch:
             return item.get("content_hash", "")
     return ""
 
@@ -1067,8 +1017,6 @@ def run_final(args) -> list[dict]:
         str(root / args.skim_notes),
         "--deep-notes",
         str(root / args.deep_notes),
-        "--legacy-notes",
-        str(root / legacy_notes_name(args)),
         "--candidates",
         str(root / args.candidates),
         "--phase2-root",
@@ -1105,8 +1053,6 @@ def run_state(args) -> dict:
             args.candidates,
             "--deep-notes",
             args.deep_notes,
-            "--legacy-notes",
-            legacy_notes_name(args),
         ],
         root,
     )
@@ -1163,7 +1109,7 @@ def infer_workflow_state(args, scan: dict | None = None) -> dict:
     completed = [code for code, item in batches.items() if item.get("status") in {"notes_complete", "skim_complete"}]
     inventory_path = phase1.get("inventory_path") or str(resolve_inventory(root, default_inventory_for(root, args.inventory)))
     phase1_report = Path(phase1.get("phase1_report_path") or default_phase1_report_for(root))
-    notes_path = root / (args.skim_notes if scan_state.get("workflow_mode") in {"three_stage", "hybrid"} else legacy_notes_name(args))
+    notes_path = root / args.skim_notes
     warnings = []
     if phase1.get("missing_project_files"):
         warnings.append("missing_project_files: " + ", ".join(phase1.get("missing_project_files", [])))
@@ -1266,7 +1212,7 @@ def resolve_action(args) -> str:
     if args.phase == "final":
         return "final"
     if args.continue_workflow:
-        return "legacy-continue"
+        return "next"
     return "state"
 
 
@@ -1300,8 +1246,6 @@ def write_operations_for(action: str, args) -> list[str]:
         if args.write_stubs:
             items.append("write batch note stubs")
         return items
-    if action == "phase2-skim":
-        return [f"write legacy/recovery skim-note stubs for {args.batch}; not a template-v2 main-flow skim note"]
     if action == "phase2-overview":
         if is_template_v2(Path(args.root).resolve()) and args.batch:
             overview = f"reports/accepted_overviews/{args.batch}_skim_overview.md" if args.skim_overview == "phase2_skim_overview.md" else args.skim_overview
@@ -1325,8 +1269,6 @@ def write_operations_for(action: str, args) -> list[str]:
             "write phase2_reading_notes.parsed.json",
             "write final_literature_map.md, key_papers.md, research_opportunities.md, and open_questions.md",
         ]
-    if action == "legacy-continue":
-        return ["may write the next deterministic workflow output depending on current state"]
     if action == "init-state":
         return [f"create {state_file_path(args)} if it does not already exist"]
     if action == "update-state":
@@ -1367,10 +1309,6 @@ def planned_steps_for(action: str, args) -> list[dict]:
         if args.write_stubs:
             steps.append({"description": "write structured note stubs"})
         return steps
-    if action == "phase2-skim":
-        if not args.batch:
-            return [{"description": "missing required --batch; no skim-note stubs can be written yet"}]
-        return [{"description": "legacy/stub-only recovery action; use run-next-microbatch for template-v2 packet-only skim writing", "batch": args.batch}]
     if action == "phase2-overview":
         if is_template_v2(root) and args.batch:
             overview = root / ("reports/accepted_overviews/" + f"{args.batch}_skim_overview.md") if args.skim_overview == "phase2_skim_overview.md" else root / args.skim_overview
@@ -1402,9 +1340,7 @@ def planned_steps_for(action: str, args) -> list[dict]:
     if action == "accept-phase3":
         return [{"description": "copy Phase 3 deep note into notes/accepted, validate selected coverage, and register artifact", "batch": args.batch}]
     if action == "final":
-        return [{"description": "create final synthesis draft files with selected-deep > skim > legacy precedence"}]
-    if action == "legacy-continue":
-        return [{"description": "inspect state and execute the legacy next deterministic step"}]
+        return [{"description": "create final synthesis draft files from active registry artifacts"}]
     if action == "check-batch":
         return [{"description": "inspect batch state"}, {"description": "optionally run notes quality checker", "enabled": bool(args.check_notes_quality)}]
     if action == "init-state":
@@ -1423,8 +1359,6 @@ def network_required_for(action: str, args) -> bool:
         return bool(args.fetch_metadata or is_url(args.source))
     if action == "prepare-batch":
         return bool(args.download)
-    if action == "legacy-continue":
-        return bool(args.download or args.fetch_metadata or is_url(args.source))
     return False
 
 
@@ -1524,7 +1458,7 @@ def run_next_report(args) -> tuple[dict, list[str]]:
     if next_action == "run phase1":
         warnings.append("Provide --source and run --action phase1 when ready. If the source is a URL, ask for network permission first.")
     elif next_action == "write phase1 report":
-        warnings.append("Next deterministic write would create or overwrite phase1_report.md; run legacy --continue-workflow or an explicit phase1/report step only after confirming.")
+        warnings.append("Next deterministic write would create or overwrite phase1_report.md; run an explicit phase1/report step only after confirming.")
     elif next_action.startswith("process "):
         warnings.append("Next batch preparation may write manifests/status files and may require PDFs in raw_papers/ or explicit --download permission.")
     elif next_action.startswith("write notes for ") or next_action.startswith("write skim notes for "):
@@ -1580,8 +1514,7 @@ def accepted_batch_skim_note_path(root: Path, batch: str) -> Path | None:
     candidates = []
     for item in data.get("artifacts", []):
         artifact_type = item.get("artifact_type") or item.get("type")
-        status = item.get("status") or item.get("quality_status", "accepted")
-        if artifact_type != "batch_skim_note" or status != "accepted":
+        if artifact_type != "batch_skim_note" or not is_active_artifact(item):
             continue
         if item.get("batch") != batch:
             continue
@@ -1596,12 +1529,8 @@ def accepted_batch_skim_note_path(root: Path, batch: str) -> Path | None:
 
 def quality_notes_for_batch(args, state: dict, batch: str, item: dict) -> tuple[Path, str, list[str]]:
     root = Path(args.root).resolve()
-    legacy_path = root / legacy_notes_name(args)
     skim_path = root / args.skim_notes
     deep_path = root / args.deep_notes
-    if item.get("workflow_mode") == "legacy":
-        heading, warnings = find_batch_heading(legacy_path, batch)
-        return legacy_path, heading, warnings
     accepted_skim_path = accepted_batch_skim_note_path(root, batch)
     if accepted_skim_path:
         heading, warnings = find_batch_heading(accepted_skim_path, batch)
@@ -1706,28 +1635,26 @@ def update_state(args) -> tuple[dict, list[str], list[dict]]:
 def main() -> None:
     parser = argparse.ArgumentParser(description="One-entry orchestration for the literature research workflow.")
     parser.add_argument("--root", default=".")
-    parser.add_argument("--layout", default="auto", choices=["auto", "template-v2", "legacy"], help="Workflow layout. auto detects template-v2 when present.")
+    parser.add_argument("--layout", default="auto", choices=["auto", "template-v2"], help="Workflow layout. Current projects use auto/template-v2.")
     parser.add_argument("--source", help="Source file or URL for Phase 1.")
     parser.add_argument("--source-url", default="")
     parser.add_argument(
         "--action",
-        choices=["state", "next", "phase1", "prepare-batch", "phase2-skim", "phase2-overview", "promote-to-deep", "phase3-deep", "check-phase3-notes", "accept-phase3", "check-batch", "final", "init-state", "update-state", "check-node", "init-from-awesome", "accept-phase1", "import-local-pdfs", "run-next-microbatch", "accept-draft", "validate-project", "check-phase3-selection"],
-        help="Clear workflow action. Old --phase/--batch/--continue-workflow forms remain supported.",
+        choices=["state", "next", "phase1", "prepare-batch", "phase2-overview", "promote-to-deep", "phase3-deep", "check-phase3-notes", "accept-phase3", "check-batch", "final", "init-state", "update-state", "check-node", "init-from-awesome", "accept-phase1", "import-local-pdfs", "run-next-microbatch", "accept-draft", "validate-project", "check-phase3-selection"],
+        help="Clear workflow action.",
     )
     parser.add_argument("--phase", choices=["phase1", "state", "final"], help="Workflow phase to run.")
-    parser.add_argument("--continue-workflow", action="store_true", help="Inspect state and run the next deterministic step.")
+    parser.add_argument("--continue-workflow", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--batch", help="Run a Bxx batch preparation pipeline.")
     parser.add_argument("--paper-id", default="", help="Stable paper id for promote-to-deep, such as arxiv:2401.00001.")
     parser.add_argument("--draft", default="", help="Draft artifact path for accept-draft.")
-    parser.add_argument("--micro-batch", default="", help="Optional legacy micro-batch id such as MB01. New template-v2 skim notes are batch-level by default.")
+    parser.add_argument("--micro-batch", default="", help="Optional micro-batch id such as MB01. New template-v2 skim notes are batch-level by default.")
     parser.add_argument("--inventory", default="phase1_inventory.csv")
     parser.add_argument("--phase2-root", default="phase2_papers")
-    parser.add_argument("--notes", default="phase2_reading_notes.md")
-    parser.add_argument("--skim-notes", default="phase2_skim_notes.md")
-    parser.add_argument("--skim-overview", default="phase2_skim_overview.md")
-    parser.add_argument("--candidates", default=None)
-    parser.add_argument("--deep-notes", default="phase3_deep_notes.md")
-    parser.add_argument("--legacy-notes", default="", help="Legacy reading-note path. Defaults to --notes.")
+    parser.add_argument("--skim-notes", default="phase2_skim_notes.md", help=argparse.SUPPRESS)
+    parser.add_argument("--skim-overview", default="phase2_skim_overview.md", help=argparse.SUPPRESS)
+    parser.add_argument("--candidates", default=None, help=argparse.SUPPRESS)
+    parser.add_argument("--deep-notes", default="phase3_deep_notes.md", help=argparse.SUPPRESS)
     parser.add_argument("--download", action="store_true", help="Allow PDF downloads for batch preparation.")
     parser.add_argument("--fetch-metadata", action="store_true", help="Allow arXiv API metadata fetching in Phase 1.")
     parser.add_argument("--rules", help="Optional JSON taxonomy rules for Phase 1 classification.")
@@ -1735,8 +1662,8 @@ def main() -> None:
     parser.add_argument("--write-stubs", action="store_true", help="Write Bxx note stubs after extraction succeeds.")
     parser.add_argument("--overwrite", action="store_true")
     parser.add_argument("--plan-only", action="store_true", help="Show planned steps and safety requirements without executing workflow writes or network actions.")
-    parser.add_argument("--allow-network", action="store_true", help="Explicitly allow network actions when network_required is true, including legacy CLI forms.")
-    parser.add_argument("--allow-write", action="store_true", help="Explicitly allow workflow commands to write project files, including legacy CLI forms.")
+    parser.add_argument("--allow-network", action="store_true", help="Explicitly allow network actions when network_required is true.")
+    parser.add_argument("--allow-write", action="store_true", help="Explicitly allow workflow commands to write project files.")
     parser.add_argument("--allow-open-conflicts", action="store_true", help="Allow accept-phase1 to proceed with severe unresolved conflicts.")
     parser.add_argument("--allow-partial-skim", action="store_true", help="Allow run-next-microbatch to proceed with pass-quality packets even when the batch has missing PDFs or low-quality extractions.")
     parser.add_argument("--replace-managed", action="store_true", help="Allow import-local-pdfs to replace an existing managed PDF from raw_papers without modifying raw_papers.")
@@ -1747,7 +1674,7 @@ def main() -> None:
     parser.add_argument("--state-file", default="", help="Optional persistent workflow state path. Defaults to <root>/.codex/literature_workflow_state.json.")
     parser.add_argument("--python", default=sys.executable)
     parser.add_argument("--node-command", help="Explicit Node.js runtime path or command for downloader helpers.")
-    parser.add_argument("--node", dest="node", help="Legacy alias for --node-command.")
+    parser.add_argument("--node", dest="node", help=argparse.SUPPRESS)
     args = parser.parse_args()
     args.candidates_explicit = args.candidates is not None
     args.candidates = args.candidates or "phase2_deep_reading_candidates.csv"
@@ -1829,9 +1756,6 @@ def main() -> None:
         elif action == "accept-phase3":
             result = run_accept_phase3(args)
             summary = build_summary(args, action, steps=[result], warnings=result.get("warnings", []), errors=result.get("errors", []))
-        elif action == "phase2-skim":
-            steps = run_phase2_skim(args)
-            summary = build_summary(args, action, steps=steps)
         elif action == "phase2-overview":
             steps = run_phase2_overview(args)
             summary = build_summary(args, action, steps=steps)
@@ -1856,33 +1780,6 @@ def main() -> None:
         elif action == "update-state":
             state, warnings, steps = update_state(args)
             summary = build_summary(args, action, steps=steps, initial_state=state, final_state=state, warnings=warnings)
-        elif action == "legacy-continue":
-            state = run_state(args)
-            next_batch = first_planned_batch(state)
-            if state.get("next_action") == "write phase1 report":
-                steps = [
-                    run(
-                        [
-                            args.python,
-                            script("write_phase1_report.py"),
-                            "--inventory",
-                            str(resolve_inventory(Path(args.root).resolve(), args.inventory)),
-                            "--output",
-                            str(Path(args.root).resolve() / "phase1_report.md"),
-                            "--overwrite",
-                            "--allow-write",
-                        ],
-                        Path(args.root).resolve(),
-                    )
-                ]
-            elif next_batch and state.get("next_action", "").startswith("process "):
-                args.batch = next_batch
-                steps = run_batch(args)
-            elif state.get("next_action") == "write final synthesis":
-                steps = run_final(args)
-            else:
-                steps = []
-            summary = build_summary(args, action, steps=steps, initial_state=state)
         else:
             raise ValueError(f"Unsupported action: {action}")
     except Exception as exc:  # noqa: BLE001

@@ -187,17 +187,8 @@ def review_entry(title: str, body: str) -> dict:
     missing = []
     if not ARXIV_RE.search(body):
         missing.append("arxiv_version")
-    if note_format not in {"phase2-skim-v1", "phase3-deep-v1", "phase3-deep-v2"}:
-        if not BASIC_RE.search(body):
-            missing.append("basic_info")
-        if not INTRO_RE.search(body):
-            missing.append("brief_intro")
-        if not EVIDENCE_RE.search(body):
-            missing.append("section_table_or_figure")
-        if not LIMIT_RE.search(body):
-            missing.append("limitations")
-        if not NUMBER_RE.search(body):
-            missing.append("numeric_result")
+    if note_format != "phase3-deep-v2":
+        missing.append("current note type phase3-deep-v2")
     missing.extend(format_missing_fields(body, strict_diagrams=True))
     ids = sorted({normalize_paper_id(match.group(0)) for match in ARXIV_ID_RE.finditer(title + "\n" + body)})
     return {"entry": title, "format": note_format, "paper_ids": ids, "missing": missing}

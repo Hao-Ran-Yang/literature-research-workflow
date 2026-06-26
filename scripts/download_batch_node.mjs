@@ -8,7 +8,6 @@ const USAGE = [
   "Options:",
   "  --validate-only              Validate existing PDFs without downloading.",
   "  --download                   Explicitly allow PDF downloads.",
-  "  --legacy-implicit-download   Preserve old behavior: download when not using --validate-only.",
   "  --no-status-write            Do not write <batch>_download_status.json.",
   "  --allow-write                Explicitly allow status-file and PDF writes.",
   "  --allow-network              Explicitly allow network downloads.",
@@ -69,13 +68,12 @@ const quiet = hasFlag("--quiet");
 const onlyFailed = hasFlag("--only-failed");
 const validateOnly = hasFlag("--validate-only");
 const downloadEnabled = hasFlag("--download");
-const legacyImplicitDownload = hasFlag("--legacy-implicit-download");
 const noStatusWrite = hasFlag("--no-status-write");
 const allowWrite = hasFlag("--allow-write");
 const allowNetwork = hasFlag("--allow-network");
 const fallbackNoVersion = !hasFlag("--no-fallback-no-version");
 
-if (!validateOnly && !downloadEnabled && !legacyImplicitDownload) {
+if (!validateOnly && !downloadEnabled) {
   console.error("Error: refusing to download without explicit --download. Use --validate-only for local validation.");
   console.error(USAGE);
   process.exit(2);
@@ -84,7 +82,7 @@ if (!noStatusWrite && !allowWrite) {
   console.error("Error: status-file output requires explicit --allow-write. Use --no-status-write for a pure check.");
   process.exit(2);
 }
-if ((downloadEnabled || legacyImplicitDownload) && (!allowWrite || !allowNetwork)) {
+if (downloadEnabled && (!allowWrite || !allowNetwork)) {
   console.error("Error: downloads require --download --allow-network --allow-write.");
   process.exit(2);
 }
@@ -356,7 +354,7 @@ const summary = {
   warnings: warningCount,
   status_path: statusPath,
   status_written: statusWritten,
-  download_enabled: Boolean(downloadEnabled || legacyImplicitDownload),
+  download_enabled: Boolean(downloadEnabled),
   validate_only: validateOnly,
 };
 if (failedRows.length > 0) {

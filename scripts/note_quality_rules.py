@@ -1,14 +1,6 @@
 import re
 
 
-NEW_FORMAT_TAG_RE = re.compile(
-    r"\[(?:Paper-stated|Interpretation|Evidence|Needs verification|Research idea|Inferred rationale)\]",
-    re.IGNORECASE,
-)
-V3_FIELD_RE = re.compile(
-    r"^\s*-\s*(?:Problem statement|Essential question|Existing approach|Innovation over prior work|Method preview)\s*:",
-    re.IGNORECASE | re.MULTILINE,
-)
 NOTE_TYPE_RE = re.compile(r"^\s*-\s*Note type\s*:\s*(\S+)\s*$", re.IGNORECASE | re.MULTILINE)
 METHOD_DIAGRAM_RE = re.compile(
     r"<!--\s*method-comparison:start\s*-->.*?<!--\s*method-comparison:end\s*-->",
@@ -67,56 +59,7 @@ DEEP_V2_COMPARISON_TABLE_ASPECTS = {
     "claimed benefit",
     "remaining weakness",
 }
-V3_REQUIRED_FIELDS = (
-    "Problem statement",
-    "Essential question",
-    "Mathematical view",
-    "Existing approach",
-    "Innovation over prior work",
-    "Motivation",
-    "Core intuition",
-    "Method preview",
-    "Objective",
-    "Optimization",
-)
 V3_REQUIRED_TAGS = ("Paper-stated", "Interpretation", "Evidence")
-SKIM_REQUIRED_FIELDS = (
-    "Problem",
-    "Why hard",
-    "Motivation",
-    "Why existing methods are not enough",
-    "Why this method is natural",
-    "Evidence pointer",
-    "One-sentence method",
-    "Intuitive view",
-    "Mathematical view",
-    "Diagram verification",
-    "Evidence strength",
-    "Deep-read recommendation",
-    "Reason",
-)
-SKIM_REQUIRED_TAGS = ("Paper-stated", "Interpretation", "Evidence", "Inferred rationale")
-DEEP_V1_REQUIRED_FIELDS = (
-    "Research question",
-    "Core idea",
-    "Why it matters",
-    "Appendix checked",
-    "Problem formulation",
-    "Objective",
-    "Optimization",
-    "Inference flow",
-    "Main experiments",
-    "Limitations",
-    "Minimal reproduction path",
-    "Follow-up experiment",
-    "Main risk",
-    "Next action",
-    "Baseline components",
-    "Changed component",
-    "Ours components",
-    "Diagram verification",
-    "Diagram evidence location",
-)
 DEEP_V2_REQUIRED_FIELDS = (
     "Research question",
     "Core contribution in one sentence",
@@ -158,11 +101,7 @@ def detect_note_format(body: str) -> str:
     match = NOTE_TYPE_RE.search(body)
     if match:
         return match.group(1).lower()
-    if V3_FIELD_RE.search(body):
-        return "v3"
-    if NEW_FORMAT_TAG_RE.search(body):
-        return "v2"
-    return "legacy"
+    return "unknown"
 
 
 def has_nonempty_tag(body: str, tag: str) -> bool:
@@ -373,45 +312,6 @@ def strict_skim_diagram_issues(body: str) -> list[str]:
     return issues
 
 
-def strict_deep_v1_diagram_issues(body: str) -> list[str]:
-    issues = diagram_type_issues(body)
-    diagram = diagram_text(body)
-    baseline_count = role_occurrences(diagram, "direct baseline")
-    prior_count = role_occurrences(diagram, "representative prior")
-    paper_count = role_occurrences(diagram, "this paper")
-    prior_ok = prior_count in {1, 2} or (prior_count == 0 and has_no_representative_prior(diagram))
-    if baseline_count != 1 or not prior_ok or paper_count != 1:
-        append_unique(issues, "Deep diagram baseline / prior / this paper")
-    blocks = diagram_blocks(diagram)
-    if is_mermaid_diagram(diagram) and not MERMAID_SUBGRAPH_RE.search(diagram):
-        append_unique(issues, "Deep Mermaid method blocks need review")
-    if len(blocks) > 4:
-        append_unique(issues, "Deep diagram compared methods <= 4")
-    if any(block_node_count(content) > 6 for _label, content in blocks):
-        append_unique(issues, "Deep diagram nodes per method <= 6")
-    if is_mermaid_diagram(diagram) and diagram_global_node_count(diagram) > 24:
-        append_unique(issues, "Deep Mermaid total nodes <= 24")
-    for token, issue in (
-        ("key changed step", "Deep diagram KEY CHANGED STEP"),
-        ("claimed benefit", "Deep diagram claimed benefit"),
-        ("weakness addressed", "Deep diagram weakness addressed"),
-        ("remaining weakness", "Deep diagram remaining weakness"),
-    ):
-        if token not in diagram:
-            append_unique(issues, issue)
-    if not ANNOTATED_DIAGRAM_HEADING_RE.search(body):
-        append_unique(issues, "Annotated Method Comparison Diagram heading")
-    if not has_complete_diagram_comparison_table(body):
-        append_unique(issues, "diagram comparison table")
-    if len(AUXILIARY_DIAGRAM_RE.findall(body)) > 1:
-        append_unique(issues, "at most one auxiliary diagram")
-    if has_repeated_long_explanation(body):
-        append_unique(issues, "Repeated long method explanation")
-    if has_unmarked_speculative_diagram_claim(body):
-        append_unique(issues, "Unsupported diagram claims need verification")
-    return issues
-
-
 def strict_deep_v2_diagram_issues(body: str) -> list[str]:
     issues = diagram_type_issues(body)
     diagram = diagram_text(body)
@@ -517,82 +417,6 @@ def has_complete_claim_risk_use_row(body: str) -> bool:
     return False
 
 
-def v3_missing_fields(body: str) -> list[str]:
-    if detect_note_format(body) != "v3":
-        return []
-    missing = []
-    for field in V3_REQUIRED_FIELDS:
-        if not has_nonempty_field(body, field):
-            missing.append(f"{field} content")
-    for tag in V3_REQUIRED_TAGS:
-        if not has_nonempty_tag(body, tag):
-            missing.append(f"[{tag}] content")
-    if has_nonempty_tag(body, "Research idea"):
-        if not has_nonempty_field(body, "Verification experiment"):
-            missing.append("Verification experiment content")
-        if not has_nonempty_field(body, "Main risk"):
-            missing.append("Main risk content")
-    return missing
-
-
-def skim_missing_fields(body: str, *, strict_diagrams: bool = False) -> list[str]:
-    if detect_note_format(body) != "phase2-skim-v1":
-        return []
-    missing = [f"{field} content" for field in SKIM_REQUIRED_FIELDS if not has_nonempty_field(body, field)]
-    for tag in SKIM_REQUIRED_TAGS:
-        if not has_nonempty_tag(body, tag):
-            missing.append(f"[{tag}] content")
-    if not has_method_comparison_diagram(body):
-        missing.append("method comparison diagram")
-    require_enum(body, "Evidence strength", {"weak", "medium", "strong"}, missing)
-    require_enum(body, "Deep-read recommendation", {"yes", "maybe", "no"}, missing)
-    require_enum(body, "Priority", {"high", "medium", "low"}, missing)
-    require_enum(body, "Diagram verification", {"verified", "needs review", "needs verification"}, missing)
-    if field_value(body, "Diagram verification").lower() in {"needs review", "needs verification"}:
-        missing.append("Diagram verification needs review")
-    if not has_evidence_location(body, "Main evidence"):
-        missing.append("Main evidence location")
-    if strict_diagrams:
-        for issue in strict_skim_diagram_issues(body):
-            append_unique(missing, issue)
-    return missing
-
-
-def deep_missing_fields(body: str, *, strict_diagrams: bool = False) -> list[str]:
-    if detect_note_format(body) != "phase3-deep-v1":
-        return []
-    missing = [f"{field} content" for field in DEEP_V1_REQUIRED_FIELDS if not has_nonempty_field(body, field)]
-    for tag in V3_REQUIRED_TAGS:
-        if not has_nonempty_tag(body, tag):
-            missing.append(f"[{tag}] content")
-    if not has_method_comparison_diagram(body):
-        missing.append("method comparison diagram")
-    if not diagram_matches_changed_component(body):
-        missing.append("Changed component diagram match")
-    if not distinct_component_lists(body):
-        missing.append("distinct baseline and ours components")
-    appendix = field_value(body, "Appendix checked").lower()
-    require_enum(body, "Appendix checked", {"yes", "no", "not applicable"}, missing)
-    if appendix == "no":
-        missing.append("Appendix checked must be yes or justified not applicable")
-    if appendix == "not applicable" and not has_nonempty_field(body, "Appendix not applicable reason"):
-        missing.append("Appendix not applicable reason content")
-    if field_value(body, "Diagram verification").lower() != "verified":
-        missing.append("Diagram verification must be verified")
-    if not has_evidence_location(body, "Diagram evidence location"):
-        missing.append("Diagram evidence location")
-    if not has_complete_diagram_comparison_table(body):
-        missing.append("prior/baseline/ours comparison content")
-    if not re.search(r"^\s*###\s+4\.\s+Claim-Evidence-Risk table\s*$", body, re.IGNORECASE | re.MULTILINE):
-        missing.append("Claim-Evidence-Risk table")
-    elif not has_complete_claim_risk_row(body):
-        missing.append("Claim-Evidence-Risk content")
-    if strict_diagrams:
-        for issue in strict_deep_v1_diagram_issues(body):
-            append_unique(missing, issue)
-    return missing
-
-
 def deep_v2_missing_fields(body: str, *, strict_diagrams: bool = False) -> list[str]:
     if detect_note_format(body) != "phase3-deep-v2":
         return []
@@ -626,10 +450,6 @@ def deep_v2_missing_fields(body: str, *, strict_diagrams: bool = False) -> list[
 
 def format_missing_fields(body: str, *, strict_diagrams: bool = False) -> list[str]:
     note_format = detect_note_format(body)
-    if note_format == "phase2-skim-v1":
-        return skim_missing_fields(body, strict_diagrams=strict_diagrams)
-    if note_format == "phase3-deep-v1":
-        return deep_missing_fields(body, strict_diagrams=strict_diagrams)
     if note_format == "phase3-deep-v2":
         return deep_v2_missing_fields(body, strict_diagrams=strict_diagrams)
-    return v3_missing_fields(body)
+    return ["current note type phase3-deep-v2"]

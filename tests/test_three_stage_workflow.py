@@ -1,4 +1,4 @@
-﻿import csv
+import csv
 import importlib.util
 import json
 import subprocess
@@ -57,6 +57,17 @@ def run_json(script: str, *args: str, cwd: Path) -> dict:
             f"stderr tail: {stderr[-1000:]}"
         ) from exc
     return json.loads(completed.stdout)
+
+
+def write_accepted_registry(root: Path, artifacts: list[dict]) -> None:
+    path = root / "batches" / "accepted_artifacts.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    normalized = []
+    for artifact in artifacts:
+        item = dict(artifact)
+        item.setdefault("status", "active")
+        normalized.append(item)
+    path.write_text(json.dumps({"schema_version": "template-v2.1", "version": 2, "artifacts": normalized}), encoding="utf-8")
 
 
 def read_csv_rows(path: Path) -> list[dict]:
@@ -461,135 +472,32 @@ def v2_notes() -> str:
 
 
 class ThreeStageWorkflowTests(unittest.TestCase):
-    def test_state_progression_overview_selection_and_final(self) -> None:
+    def test_legacy_flat_state_and_final_paths_are_not_current_inputs(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            fresh = run_json("check_workflow_state.py", "--root", str(root), cwd=root)
-            self.assertEqual(fresh["next_action"], "run phase1")
-
-            row = write_inventory(root)
-            phase1 = run_json("check_workflow_state.py", "--root", str(root), cwd=root)
-            self.assertEqual(phase1["next_action"], "process B01")
-
-            (root / "raw_papers").mkdir()
-            (root / "phase2_papers").mkdir()
-            dirs_only = run_json("check_workflow_state.py", "--root", str(root), cwd=root)
-            self.assertEqual(dirs_only["phase2"]["missing_files"], [])
-            self.assertEqual(dirs_only["next_action"], "process B01")
-
-            _manifest, pdf = create_ready_batch(root, row)
-            ready = run_json("check_workflow_state.py", "--root", str(root), cwd=root)
-            self.assertEqual(ready["next_action"], "write skim notes for B01")
-
+            write_inventory(root)
+            (root / "phase2_reading_notes.md").write_text(legacy_notes(), encoding="utf-8")
             (root / "phase2_skim_notes.md").write_text(complete_skim_notes(), encoding="utf-8")
-            skim_complete = run_json("check_workflow_state.py", "--root", str(root), cwd=root)
-            self.assertEqual(skim_complete["next_action"], "write phase2 skim overview")
-
-            run_json(
-                "literature_workflow.py",
-                "--root",
-                str(root),
-                "--action",
-                "phase2-overview",
-                "--allow-write",
-                cwd=root,
-            )
-            review = run_json("check_workflow_state.py", "--root", str(root), cwd=root)
-            self.assertEqual(review["next_action"], "write final synthesis")
-
-            candidates = root / "phase2_deep_reading_candidates.csv"
-            with candidates.open("r", encoding="utf-8-sig", newline="") as handle:
-                rows = list(csv.DictReader(handle))
-            self.assertIn("read_priority", rows[0])
-            self.assertIn("read_reason", rows[0])
-            self.assertIn("first_sections_to_read", rows[0])
-            self.assertIn("possible_gpt_question", rows[0])
-            self.assertIn("deep_note_candidate", rows[0])
-            self.assertIn("deep_note_reason", rows[0])
-            self.assertEqual(rows[0]["read_priority"], "")
-            self.assertEqual(rows[0]["deep_note_candidate"], "")
-            rows[0]["selected_for_phase3"] = "no"
-            with candidates.open("w", encoding="utf-8-sig", newline="") as handle:
-                writer = csv.DictWriter(handle, fieldnames=rows[0].keys())
-                writer.writeheader()
-                writer.writerows(rows)
-            skipped = run_json("check_workflow_state.py", "--root", str(root), cwd=root)
-            self.assertEqual(skipped["phase3"]["status"], "skipped")
-            self.assertEqual(skipped["next_action"], "write final synthesis")
-
-            run_json(
-                "literature_workflow.py",
-                "--root",
-                str(root),
-                "--action",
-                "promote-to-deep",
-                "--paper-id",
-                rows[0]["paper_id"],
-                "--allow-write",
-                cwd=root,
-            )
-            pdf.with_suffix(".deep.txt").write_text("appendix aware " * 200, encoding="utf-8")
-            selected = run_json("check_workflow_state.py", "--root", str(root), cwd=root)
-            self.assertEqual(selected["next_action"], "prepare phase3 deep reading")
-
-            run_json(
-                "literature_workflow.py",
-                "--root",
-                str(root),
-                "--action",
-                "phase3-deep",
-                "--allow-write",
-                "--overwrite",
-                cwd=root,
-            )
-            extracted = run_json("check_workflow_state.py", "--root", str(root), cwd=root)
-            self.assertEqual(extracted["next_action"], "write deep notes for selected papers")
-
-            (root / "phase3_deep_notes.md").write_text(complete_deep_notes(), encoding="utf-8")
-            deep_done = run_json("check_workflow_state.py", "--root", str(root), cwd=root)
-            self.assertEqual(deep_done["phase3"]["status"], "deep_notes_complete")
-            self.assertEqual(deep_done["next_action"], "write final synthesis")
+            state = run_json("check_workflow_state.py", "--root", str(root), cwd=root)
+            self.assertEqual(state["workflow_mode"], "three_stage")
+            self.assertNotIn("legacy", state)
 
             run_json("literature_workflow.py", "--root", str(root), "--action", "final", "--allow-write", cwd=root)
-            literature_map = (root / "final_literature_map.md").read_text(encoding="utf-8")
-            self.assertIn("selected-deep=1", literature_map)
-            self.assertIn("## Problem Landscape", literature_map)
             parsed_final = json.loads((root / "phase2_reading_notes.parsed.json").read_text(encoding="utf-8"))
-            self.assertEqual(parsed_final["papers"][0]["note_format"], "phase3-deep-v1")
-
-    def test_quality_parser_empty_template_and_candidate_merge(self) -> None:
+            self.assertEqual(parsed_final["summary"]["paper_entries"], 0)
+    def test_quality_parser_rejects_removed_skim_stub_template_and_merges_candidates(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             row = write_inventory(root)
             manifest, _pdf = create_ready_batch(root, row)
-            empty_stubs = root / "empty_skim.md"
-            run_json(
-                "write_batch_note_stubs.py",
-                "--manifest",
-                str(manifest),
-                "--template",
-                "phase2-skim",
-                "--output",
-                str(empty_stubs),
-                "--allow-write",
-                cwd=root,
+            rejected = subprocess.run(
+                [sys.executable, "-B", str(SCRIPTS / "write_batch_note_stubs.py"), "--manifest", str(manifest), "--template", "phase2-skim", "--output", str(root / "empty_skim.md"), "--allow-write"],
+                cwd=str(root),
+                text=True,
+                capture_output=True,
             )
-            empty_quality = run_json(
-                "check_notes_quality.py",
-                "--notes",
-                str(empty_stubs),
-                "--batch-heading",
-                "B01 Skim Note Stubs",
-                "--expected",
-                "1",
-                cwd=root,
-            )
-            self.assertEqual(empty_quality["passed"], 0)
-            self.assertTrue(empty_quality["needs_review"][0]["missing"])
-
-            empty_parsed = run_json("parse_reading_notes.py", "--notes", str(empty_stubs), cwd=root)
-            self.assertTrue(empty_parsed["papers"][0]["quality_flags"]["needs_review"])
-            self.assertEqual(empty_parsed["papers"][0]["possible_research_ideas"], [])
+            self.assertNotEqual(rejected.returncode, 0)
+            self.assertIn("invalid choice", rejected.stderr)
 
             notes = root / "phase2_skim_notes.md"
             notes.write_text(complete_skim_notes(), encoding="utf-8")
@@ -603,33 +511,8 @@ class ThreeStageWorkflowTests(unittest.TestCase):
                 "1",
                 cwd=root,
             )
-            self.assertEqual(quality["passed"], 1)
-            parsed = run_json("parse_reading_notes.py", "--notes", str(notes), cwd=root)
-            self.assertEqual(parsed["papers"][0]["problem"], "Reduce adaptation cost.")
-            self.assertEqual(parsed["papers"][0]["mathematical_view"], "Optimize a low-dimensional residual.")
-            self.assertEqual(parsed["papers"][0]["diagram_type"], "inference / reasoning pipeline")
-
-            overview = root / "phase2_skim_overview.md"
-            candidates = root / "phase2_deep_reading_candidates.csv"
-            run_json("write_skim_overview.py", "--notes", str(notes), "--output", str(overview), "--candidates", str(candidates), "--allow-write", cwd=root)
-            overview_text = overview.read_text(encoding="utf-8")
-            self.assertIn("Adapter branch", overview_text)
-            self.assertIn("Adapter width sensitivity", overview_text)
-            with candidates.open("r", encoding="utf-8-sig", newline="") as handle:
-                rows = list(csv.DictReader(handle))
-            rows[0]["selected_for_phase3"] = "yes"
-            rows[0]["selection_notes"] = "keep this decision"
-            with candidates.open("w", encoding="utf-8-sig", newline="") as handle:
-                writer = csv.DictWriter(handle, fieldnames=rows[0].keys())
-                writer.writeheader()
-                writer.writerows(rows)
-            run_json("write_skim_overview.py", "--notes", str(notes), "--output", str(overview), "--candidates", str(candidates), "--allow-write", cwd=root)
-            with candidates.open("r", encoding="utf-8-sig", newline="") as handle:
-                merged = list(csv.DictReader(handle))
-            self.assertEqual(merged[0]["selected_for_phase3"], "yes")
-            self.assertEqual(merged[0]["selection_notes"], "keep this decision")
-            self.assertEqual(merged[0]["read_priority"], "")
-            self.assertEqual(merged[0]["deep_note_candidate"], "")
+            self.assertEqual(quality["passed"], 0)
+            self.assertIn("current note type phase3-deep-v2", quality["needs_review"][0]["missing"])
 
     def test_check_batch_quality_uses_template_v2_accepted_skim_note(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -684,12 +567,12 @@ class ThreeStageWorkflowTests(unittest.TestCase):
             self.assertEqual(quality["batch_heading"], "2. Per-paper skim notes")
             self.assertTrue(quality["count_ok"])
 
-    def test_deep_quality_and_legacy_compatibility(self) -> None:
+    def test_deep_quality_accepts_current_v2_and_rejects_legacy_v1(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             write_inventory(root)
             deep = root / "phase3_deep_notes.md"
-            deep.write_text(complete_deep_notes(), encoding="utf-8")
+            deep.write_text(complete_deep_v2_notes(), encoding="utf-8")
             deep_quality = run_json(
                 "check_notes_quality.py",
                 "--notes",
@@ -700,19 +583,24 @@ class ThreeStageWorkflowTests(unittest.TestCase):
                 "1",
                 cwd=root,
             )
-            self.assertEqual(deep_quality["passed"], 1)
+            self.assertEqual(deep_quality["passed"], 1, deep_quality)
             deep_parsed = run_json("parse_reading_notes.py", "--notes", str(deep), cwd=root)
-            self.assertEqual(deep_parsed["papers"][0]["appendix_checked"], "yes")
-            self.assertEqual(len(deep_parsed["papers"][0]["claim_evidence_risks"]), 1)
+            self.assertEqual(deep_parsed["papers"][0]["note_format"], "phase3-deep-v2")
 
-            deep.unlink()
-            (root / "phase2_reading_notes.md").write_text(legacy_notes(), encoding="utf-8")
-            legacy_state = run_json("check_workflow_state.py", "--root", str(root), cwd=root)
-            self.assertEqual(legacy_state["workflow_mode"], "legacy")
-            self.assertEqual(legacy_state["next_action"], "write final synthesis")
-            legacy_parsed = run_json("parse_reading_notes.py", "--notes", str(root / "phase2_reading_notes.md"), cwd=root)
-            self.assertEqual(legacy_parsed["papers"][0]["note_format"], "legacy")
-
+            legacy = root / "legacy_v1_deep.md"
+            legacy.write_text(complete_deep_notes(), encoding="utf-8")
+            legacy_quality = run_json(
+                "check_notes_quality.py",
+                "--notes",
+                str(legacy),
+                "--batch-heading",
+                "B01 Phase 3 Selected Deep Reading",
+                "--expected",
+                "1",
+                cwd=root,
+            )
+            self.assertEqual(legacy_quality["passed"], 0)
+            self.assertIn("current note type phase3-deep-v2", legacy_quality["needs_review"][0]["missing"])
     def test_phase3_deep_v2_contract_quality_parser_and_v1_compatibility(self) -> None:
         template = (SKILL_ROOT / "templates" / "notes" / "phase3_deep_note.md").read_text(encoding="utf-8")
         self.assertIn("- Note type: phase3-deep-v2", template)
@@ -764,6 +652,13 @@ class ThreeStageWorkflowTests(unittest.TestCase):
             self.assertEqual(paper["claim_evidence_risks"][0]["my_verdict_or_use"], "Reliable enough for a small reproduction")
             self.assertEqual(paper["deep_method_comparison"][0]["direct_baseline"], "Full-model update")
             (root / "phase3_deep_notes.md").write_text(complete_deep_v2_notes(), encoding="utf-8")
+            write_accepted_registry(root, [{
+                "type": "note",
+                "artifact_type": "phase3_deep_note",
+                "path": "phase3_deep_notes.md",
+                "batch": "B01",
+                "paper_ids": ["arxiv:2401.00001"],
+            }])
             run_json(
                 "write_final_synthesis.py",
                 "--inventory",
@@ -784,19 +679,6 @@ class ThreeStageWorkflowTests(unittest.TestCase):
             opportunities = (root / "research_opportunities.md").read_text(encoding="utf-8")
             self.assertIn("Limited model scale.; Base features transfer.", opportunities)
 
-            v1 = root / "v1_deep.md"
-            v1.write_text(complete_deep_notes(), encoding="utf-8")
-            v1_quality = run_json(
-                "check_notes_quality.py",
-                "--notes",
-                str(v1),
-                "--batch-heading",
-                "B01 Phase 3 Selected Deep Reading",
-                "--expected",
-                "1",
-                cwd=root,
-            )
-            self.assertEqual(v1_quality["passed"], 1, v1_quality)
 
     def test_phase3_deep_v2_no_prior_and_verbose_mermaid_advisory(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -900,141 +782,32 @@ class ThreeStageWorkflowTests(unittest.TestCase):
             self.assertTrue((root / "phase1_report.md").exists())
             self.assertFalse((root / "phase2_skim_notes.md").exists())
 
-    def test_legacy_v2_old_v3_and_runner_plan_only(self) -> None:
+    def test_legacy_note_formats_are_not_current_parser_inputs(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            row = write_inventory(root)
-            manifest, _pdf = create_ready_batch(root, row)
-
             v2 = root / "v2.md"
             v2.write_text(v2_notes(), encoding="utf-8")
             parsed_v2 = run_json("parse_reading_notes.py", "--notes", str(v2), cwd=root)
-            self.assertEqual(parsed_v2["papers"][0]["note_format"], "v2")
+            self.assertEqual(parsed_v2["papers"][0]["note_format"], "unknown")
+            self.assertTrue(parsed_v2["papers"][0]["quality_flags"]["needs_review"])
 
-            old_v3 = root / "old_v3.md"
-            run_json(
-                "write_batch_note_stubs.py",
-                "--manifest",
-                str(manifest),
-                "--output",
-                str(old_v3),
-                "--allow-write",
-                cwd=root,
+            completed = subprocess.run(
+                [sys.executable, "-B", str(SCRIPTS / "literature_workflow.py"), "--root", str(root), "--action", "phase2-skim", "--plan-only"],
+                cwd=str(root),
+                text=True,
+                capture_output=True,
             )
-            parsed_v3 = run_json("parse_reading_notes.py", "--notes", str(old_v3), cwd=root)
-            self.assertEqual(parsed_v3["papers"][0]["note_format"], "v3")
-            self.assertEqual(parsed_v3["papers"][0]["possible_research_ideas"], [])
-
-            (root / "phase2_reading_notes.md").write_text(legacy_notes(), encoding="utf-8")
-            run_json(
-                "write_final_synthesis.py",
-                "--inventory",
-                str(root / "phase1_inventory.csv"),
-                "--notes",
-                str(root / "phase2_reading_notes.md"),
-                "--output-dir",
-                str(root),
-                "--overwrite",
-                "--allow-write",
-                cwd=root,
-            )
-            self.assertIn("legacy-deep=1", (root / "final_literature_map.md").read_text(encoding="utf-8"))
-
-            for action_args in [
-                ("phase2-skim", "--batch", "B01"),
-                ("phase2-overview",),
-                ("phase3-deep",),
-                ("final",),
-            ]:
-                completed = subprocess.run(
-                    [
-                        sys.executable,
-                        "-B",
-                        str(SCRIPTS / "literature_workflow.py"),
-                        "--root",
-                        str(root),
-                        "--action",
-                        *action_args,
-                        "--plan-only",
-                    ],
-                    cwd=str(root),
-                    check=True,
-                    text=True,
-                    capture_output=True,
-                )
-                summary = json.loads(completed.stdout)
-                self.assertEqual(summary["action"], action_args[0])
-                self.assertIn("--plan-only was set", summary["warnings"][0])
-
-    def test_old_manifest_and_headingless_legacy_notes_are_compatible(self) -> None:
+            self.assertNotEqual(completed.returncode, 0)
+            self.assertIn("invalid choice", completed.stderr)
+    def test_root_legacy_notes_do_not_contribute_to_current_state(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            row = write_inventory(root)
-            pdf = root / "phase2_papers" / "Core" / "Adapters" / "2401.00001.pdf"
-            pdf.parent.mkdir(parents=True)
-            pdf.write_bytes(b"%PDF-" + b"x" * 22000)
-            body = pdf.with_suffix(".body.txt")
-            body.write_text("main body " * 200, encoding="utf-8")
-            (root / "phase2_papers" / "B01_manifest.json").write_text(
-                json.dumps([{key: value for key, value in row.items() if key != "pdf_path"}]),
-                encoding="utf-8",
-            )
-            (root / "phase2_papers" / "B01_body_text_manifest.json").write_text(
-                json.dumps([{"arxiv_id": "2401.00001", "pdf_path": str(pdf), "body_text_path": str(body), "status": "exists"}]),
-                encoding="utf-8",
-            )
-            (root / "phase2_reading_notes.md").write_text(
-                "# Historical Notes\n\n#### Example Paper\n\n- arXiv: 2401.00001\n- Summary: read.\n",
-                encoding="utf-8",
-            )
+            write_inventory(root)
+            (root / "phase2_reading_notes.md").write_text("# Legacy\n\n#### Paper\n- arXiv: 2401.00001\n", encoding="utf-8")
             state = run_json("check_workflow_state.py", "--root", str(root), cwd=root)
-            self.assertEqual(state["batches"]["B01"]["pdfs"], 1)
-            self.assertEqual(state["batches"]["B01"]["body_texts"], 1)
-            self.assertEqual(state["batches"]["B01"]["legacy_notes_entries"], 1)
-            self.assertEqual(state["batches"]["B01"]["status"], "notes_complete")
-            run_json(
-                "literature_workflow.py",
-                "--root",
-                str(root),
-                "--action",
-                "phase2-skim",
-                "--batch",
-                "B01",
-                "--allow-write",
-                cwd=root,
-            )
-            self.assertTrue((root / "phase2_papers" / "B01_skim_note_stubs.md").exists())
-
-    def test_hybrid_state_deduplicates_by_paper(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            base = write_inventory(root)
-            rows = []
-            for index, batch in enumerate(["B01 Legacy", "B02 Skim", "B03 Deep"], start=1):
-                row = dict(base)
-                row["arxiv_id"] = f"2401.0000{index}"
-                row["title"] = f"Paper {index}"
-                row["reading_batch"] = batch
-                rows.append(row)
-            write_inventory_rows(root, rows)
-            (root / "phase2_reading_notes.md").write_text(
-                "# Legacy\n\n#### Paper 1\n- arXiv: 2401.00001\n",
-                encoding="utf-8",
-            )
-            (root / "phase2_skim_notes.md").write_text(
-                "# Skim\n\n#### Paper 2\n- arXiv: 2401.00002\n",
-                encoding="utf-8",
-            )
-            (root / "phase3_deep_notes.md").write_text(
-                "# Deep\n\n#### Paper 3\n- arXiv: 2401.00003\n",
-                encoding="utf-8",
-            )
-            state = run_json("check_workflow_state.py", "--root", str(root), cwd=root)
-            self.assertEqual(state["workflow_mode"], "hybrid")
-            self.assertEqual(state["batches"]["B01"]["effective_notes_entries"], 1)
-            self.assertEqual(state["batches"]["B02"]["effective_notes_entries"], 1)
-            self.assertEqual(state["batches"]["B03"]["effective_notes_entries"], 1)
-
+            self.assertEqual(state["workflow_mode"], "three_stage")
+            self.assertEqual(state["batches"]["B01"]["effective_notes_entries"], 0)
+            self.assertNotIn("legacy_notes_entries", state["batches"]["B01"])
     def test_hybrid_notes_do_not_inflate_skim_completion(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -1074,29 +847,17 @@ class ThreeStageWorkflowTests(unittest.TestCase):
             self.assertIn("review phase3 failures", state["next_action"])
             self.assertTrue(state["phase3"]["warnings"])
 
-    def test_hybrid_quality_check_routes_to_batch_notes_file(self) -> None:
+    def test_check_batch_quality_ignores_root_legacy_notes_file(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            base = write_inventory(root)
-            legacy_row = dict(base)
-            skim_row = dict(base)
-            skim_row["arxiv_id"] = "2401.00002"
-            skim_row["title"] = "Skim Paper"
-            skim_row["reading_batch"] = "B02 Skim"
-            write_inventory_rows(root, [legacy_row, skim_row])
+            write_inventory(root)
             (root / "phase2_reading_notes.md").write_text(legacy_notes(), encoding="utf-8")
-            skim_notes = complete_skim_notes().replace("B01 Skim Notes", "B02 Skim Notes").replace("2401.00001", "2401.00002")
-            (root / "phase2_skim_notes.md").write_text(skim_notes, encoding="utf-8")
-            legacy_check = run_json(
+            checked = run_json(
                 "literature_workflow.py", "--root", str(root), "--action", "check-batch", "--batch", "B01", "--check-notes-quality", cwd=root
             )
-            skim_check = run_json(
-                "literature_workflow.py", "--root", str(root), "--action", "check-batch", "--batch", "B02", "--check-notes-quality", cwd=root
-            )
-            self.assertIn("phase2_reading_notes.md", json.dumps(legacy_check))
-            self.assertIn("phase2_skim_notes.md", json.dumps(skim_check))
-            self.assertNotIn("no notes heading found", json.dumps(legacy_check))
-
+            serialized = json.dumps(checked)
+            self.assertNotIn("phase2_reading_notes.md", serialized)
+            self.assertIn("notes file not found", serialized)
     def test_full_scaffold_placeholders_do_not_start_later_phases(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -1113,25 +874,11 @@ class ThreeStageWorkflowTests(unittest.TestCase):
             self.assertFalse(state["final_synthesis"]["started"])
             self.assertEqual(state["next_action"], "run phase1")
 
-    def test_strict_quality_rejects_placeholder_diagram_and_unchecked_appendix(self) -> None:
+    def test_strict_quality_rejects_current_deep_unchecked_appendix(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            skim = root / "skim.md"
-            skim.write_text(complete_skim_notes().replace("[Full-model update]", "[Baseline step]").replace("[KEY CHANGED STEP: adapter update]", "[KEY CHANGED STEP: ...]"), encoding="utf-8")
-            skim_quality = run_json(
-                "check_notes_quality.py",
-                "--notes",
-                str(skim),
-                "--batch-heading",
-                "B01 Skim Notes",
-                "--expected",
-                "1",
-                cwd=root,
-            )
-            self.assertIn("method comparison diagram", skim_quality["needs_review"][0]["missing"])
-
             deep = root / "deep.md"
-            deep.write_text(complete_deep_notes().replace("- Appendix checked: yes", "- Appendix checked: no"), encoding="utf-8")
+            deep.write_text(complete_deep_v2_notes().replace("- Appendix checked: yes", "- Appendix checked: no"), encoding="utf-8")
             deep_quality = run_json(
                 "check_notes_quality.py",
                 "--notes",
@@ -1143,369 +890,56 @@ class ThreeStageWorkflowTests(unittest.TestCase):
                 cwd=root,
             )
             self.assertIn("Appendix checked must be yes or justified not applicable", deep_quality["needs_review"][0]["missing"])
-
-    def test_strict_diagram_quality_rules_are_advisory_and_targeted(self) -> None:
+    def test_current_deep_v2_diagram_quality_rules_are_targeted(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             counter = 0
 
-            def missing_for(markdown: str, heading: str) -> list[str]:
+            def missing_for(markdown: str) -> list[str]:
                 nonlocal counter
                 counter += 1
-                notes = root / f"notes_{counter}.md"
+                notes = root / f"deep_{counter}.md"
                 notes.write_text(markdown, encoding="utf-8")
                 quality = run_json(
                     "check_notes_quality.py",
                     "--notes",
                     str(notes),
                     "--batch-heading",
-                    heading,
+                    "B01 Phase 3 Selected Deep Reading",
                     "--expected",
                     "1",
                     cwd=root,
                 )
-                return quality["needs_review"][0]["missing"]
+                return quality["needs_review"][0]["missing"] if quality["needs_review"] else []
 
-            old_v1 = (
-                complete_skim_notes()
-                .replace("- Diagram type: inference / reasoning pipeline\n", "")
-                .replace(
-                    "```text\n"
-                    "Direct baseline:      [Input] -> [Full-model update] -> [Output]\n"
-                    "Representative prior: [Input] -> [Reduced update path] -> [Output]\n"
-                    "This paper:           [Input] -> [KEY CHANGED STEP: adapter update] -> [Output]\n"
-                    "```",
-                    "```mermaid\n"
-                    "flowchart LR\n"
-                    "  A[Input] --> B[Prior baseline full update] --> C[Output]\n"
-                    "  A --> D[Ours adapter update] --> C\n"
-                    "```",
-                )
-                .replace(
-                    "| Aspect | Baseline / Prior | This paper |\n"
-                    "|---|---|---|\n"
-                    "| Changed component | Full-model update | Adapter branch |\n"
-                    "| Intuition | Update every parameter | Update a narrow branch |\n"
-                    "| Weakness addressed | Full updates are expensive | Reduce trainable parameters |\n"
-                    "| Remaining weakness | High adaptation cost | Adapter width sensitivity |\n\n",
-                    "",
-                )
-            )
-            old_notes = root / "old_v1.md"
-            old_notes.write_text(old_v1, encoding="utf-8")
-            old_parsed = run_json("parse_reading_notes.py", "--notes", str(old_notes), cwd=root)
-            self.assertNotIn("Diagram type content", old_parsed["papers"][0]["quality_missing_fields"])
-            self.assertIn("Diagram type content", missing_for(old_v1, "B01 Skim Notes"))
+            missing_role = complete_deep_v2_notes().replace("Representative prior", "Related prior")
+            self.assertIn("Deep diagram baseline / prior / this paper", missing_for(missing_role))
 
-            missing_role = complete_skim_notes().replace("Representative prior:", "Related prior:")
-            self.assertIn("Skim diagram canonical roles", missing_for(missing_role, "B01 Skim Notes"))
+            missing_table = complete_deep_v2_notes().replace("| Remaining weakness | High adaptation cost | Restricted updates | Adapter width sensitivity |\n", "")
+            self.assertIn("direct baseline / representative prior / this paper comparison content", missing_for(missing_table))
 
-            no_reliable_prior = complete_skim_notes().replace(
-                "Representative prior: [Input] -> [Reduced update path] -> [Output]",
-                "N/A: no representative prior identified. Reason: benchmark-only protocol.",
-            )
-            no_prior_notes = root / "no_prior.md"
-            no_prior_notes.write_text(no_reliable_prior, encoding="utf-8")
-            no_prior_quality = run_json(
-                "check_notes_quality.py",
-                "--notes",
-                str(no_prior_notes),
-                "--batch-heading",
-                "B01 Skim Notes",
-                "--expected",
-                "1",
-                cwd=root,
-            )
-            self.assertEqual(no_prior_quality["passed"], 1)
-
-            extra_method = complete_skim_notes().replace(
-                "Representative prior: [Input] -> [Reduced update path] -> [Output]",
-                "Representative prior: [Input] -> [Reduced update path] -> [Output]\nExtra prior:          [Input] -> [Extra branch] -> [Output]",
-            )
-            self.assertIn("Skim diagram compared methods <= 3", missing_for(extra_method, "B01 Skim Notes"))
-
-            skim_too_many_nodes = complete_skim_notes().replace(
-                "Direct baseline:      [Input] -> [Full-model update] -> [Output]",
-                "Direct baseline:      [Input] -> [Load] -> [Encode] -> [Update] -> [Decode] -> [Output]",
-            )
-            self.assertIn("Skim diagram nodes per method <= 5", missing_for(skim_too_many_nodes, "B01 Skim Notes"))
-
-            missing_table = complete_skim_notes().replace("| Remaining weakness | High adaptation cost | Adapter width sensitivity |\n", "")
-            self.assertIn("diagram comparison table", missing_for(missing_table, "B01 Skim Notes"))
-
-            missing_skim_changed_step = complete_skim_notes().replace("KEY CHANGED STEP: adapter update", "Adapter update")
-            self.assertIn("Skim diagram KEY CHANGED STEP", missing_for(missing_skim_changed_step, "B01 Skim Notes"))
-
-            incomplete_deep = (
-                complete_deep_notes()
-                .replace("### 2. Annotated Method Comparison Diagram", "### 2. Comparison")
-                .replace("KEY CHANGED STEP", "Changed step")
-                .replace("Weakness addressed", "Addressed issue")
-            )
-            deep_missing = missing_for(incomplete_deep, "B01 Phase 3 Selected Deep Reading")
-            self.assertIn("Annotated Method Comparison Diagram heading", deep_missing)
-            self.assertIn("Deep diagram KEY CHANGED STEP", deep_missing)
-            self.assertIn("Deep diagram weakness addressed", deep_missing)
-
-            missing_deep_role = complete_deep_notes().replace('subgraph prior["Representative prior"]', 'subgraph prior["Related prior"]')
-            self.assertIn("Deep diagram baseline / prior / this paper", missing_for(missing_deep_role, "B01 Phase 3 Selected Deep Reading"))
-
-            extra_deep_blocks = complete_deep_notes().replace(
-                '  subgraph ours["This paper"]',
-                '  subgraph prior2["Representative prior 2"]\n'
-                '    Q1["Input"] --> Q2["Second prior"] --> Q3["Output"]\n'
-                "  end\n"
-                '  subgraph extra["Extra comparison"]\n'
-                '    X1["Input"] --> X2["Extra"] --> X3["Output"]\n'
-                "  end\n"
-                '  subgraph ours["This paper"]',
-            )
-            self.assertIn("Deep diagram compared methods <= 4", missing_for(extra_deep_blocks, "B01 Phase 3 Selected Deep Reading"))
-
-            deep_too_many_nodes = complete_deep_notes().replace(
-                'B1["Input"] --> B2["Full-model update"] --> B3["Output<br/>Main weakness: expensive updates"]',
-                'B1["Input"] --> B2["Load"] --> B3["Encode"] --> B4["Update"] --> B5["Decode"] --> B6["Audit"] --> B7["Output"]',
-            )
-            self.assertIn("Deep diagram nodes per method <= 6", missing_for(deep_too_many_nodes, "B01 Phase 3 Selected Deep Reading"))
-
-            too_many_auxiliary = complete_deep_notes() + "\n### Training-to-Inference Diagram\n\n### System Architecture Diagram\n"
-            self.assertIn("at most one auxiliary diagram", missing_for(too_many_auxiliary, "B01 Phase 3 Selected Deep Reading"))
-
-            repeated = "- Detail: " + ("adapter routing explanation " * 8)
-            duplicate_explanation = complete_skim_notes().replace("### 5. Evidence strength", f"{repeated}\n{repeated}\n\n### 5. Evidence strength")
-            self.assertIn("Repeated long method explanation", missing_for(duplicate_explanation, "B01 Skim Notes"))
-
-            unsupported_claim = complete_deep_notes().replace(
-                "- [Interpretation] The key change is update dimensionality.",
-                "- [Interpretation]",
-            ).replace("- [Interpretation] The claimed benefit follows the paper's cost comparison.", "- [Interpretation]")
-            self.assertIn("Unsupported diagram claims need verification", missing_for(unsupported_claim, "B01 Phase 3 Selected Deep Reading"))
-
-            skim_mermaid_without_subgraphs = complete_skim_notes().replace(
-                "```text\n"
-                "Direct baseline:      [Input] -> [Full-model update] -> [Output]\n"
-                "Representative prior: [Input] -> [Reduced update path] -> [Output]\n"
-                "This paper:           [Input] -> [KEY CHANGED STEP: adapter update] -> [Output]\n"
-                "```",
-                "```mermaid\n"
-                "flowchart LR\n"
-                "  A[Direct baseline input] --> B[Load] --> C[Encode] --> D[Update] --> E[Decode] --> F[Output]\n"
-                "  G[Representative prior input] --> H[Prior update] --> I[Output]\n"
-                "  J[This paper input] --> K[KEY CHANGED STEP: adapter update] --> L[Output]\n"
-                "  M[Extra method] --> N[Extra output]\n"
-                "```",
-            )
-            skim_mermaid_missing = missing_for(skim_mermaid_without_subgraphs, "B01 Skim Notes")
-            self.assertIn("Skim Mermaid method blocks need review", skim_mermaid_missing)
-
-            deep_mermaid_without_subgraphs = complete_deep_notes().replace(
-                '  subgraph baseline["Direct baseline"]\n'
-                '    B1["Input"] --> B2["Full-model update"] --> B3["Output<br/>Main weakness: expensive updates"]\n'
-                "  end\n"
-                '  subgraph prior["Representative prior"]\n'
-                '    P1["Input"] --> P2["Reduced update path"] --> P3["Output<br/>Main weakness: limited flexibility"]\n'
-                "  end\n"
-                '  subgraph ours["This paper"]\n'
-                '    O1["Input"] --> O2["KEY CHANGED STEP: adapter update<br/>Claimed benefit: lower adaptation cost<br/>Weakness addressed: expensive full updates"] --> O3["Output<br/>Remaining weakness: adapter width sensitivity"]\n'
-                "  end",
-                '  B1["Direct baseline input"] --> B2["Load"] --> B3["Encode"] --> B4["Update"] --> B5["Decode"] --> B6["Audit"] --> B7["Output"]\n'
-                '  P1["Representative prior input"] --> P2["Prior update"] --> P3["Output"]\n'
-                '  O1["This paper input"] --> O2["KEY CHANGED STEP: adapter update<br/>Claimed benefit: lower cost<br/>Weakness addressed: full update"] --> O3["Remaining weakness: width"]',
-            )
-            deep_mermaid_missing = missing_for(deep_mermaid_without_subgraphs, "B01 Phase 3 Selected Deep Reading")
-            self.assertIn("Deep Mermaid method blocks need review", deep_mermaid_missing)
-
-    def test_skim_template_uses_minimal_diagram_metadata_and_old_metadata_remains_compatible(self) -> None:
+            too_many_auxiliary = complete_deep_v2_notes() + "\n### Training-to-Inference Diagram\n\n### System Architecture Diagram\n"
+            self.assertIn("at most one auxiliary diagram", missing_for(too_many_auxiliary))
+    def test_skim_template_keeps_current_canonical_blocks(self) -> None:
         template = (SKILL_ROOT / "templates" / "notes" / "phase2_skim_note.md").read_text(encoding="utf-8")
         self.assertIn("#### 2. Motivation / Method Rationale", template)
         self.assertIn("[Inferred rationale] Why this method is a natural move", template)
         self.assertIn("Evidence: paper_id={paper_id}, packet={packet_id}, section={section_hint}", template)
-        for field in [
-            "Prior or baseline",
-            "Essential change",
-            "Recurring weakness",
-            "Baseline components",
-            "Changed component",
-            "Ours components",
-        ]:
-            self.assertNotIn(f"- {field}:", template)
-
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            old_metadata = complete_skim_notes().replace(
-                "- Diagram verification: verified",
-                "- Prior or baseline: Full-model update.\n"
-                "- Essential change: Train only the adapter branch.\n"
-                "- Recurring weakness: Full updates are expensive.\n"
-                "- Baseline components: pretrained model, full update\n"
-                "- Changed component: adapter\n"
-                "- Ours components: pretrained model, adapter update\n"
-                "- Diagram verification: verified",
-            )
-            notes = root / "old_metadata.md"
-            notes.write_text(old_metadata, encoding="utf-8")
-            quality = run_json(
-                "check_notes_quality.py",
-                "--notes",
-                str(notes),
-                "--batch-heading",
-                "B01 Skim Notes",
-                "--expected",
-                "1",
-                cwd=root,
-            )
-            self.assertEqual(quality["passed"], 1)
-
-            missing_motivation = complete_skim_notes().replace(
-                "### 2. Motivation / Method Rationale\n"
-                "- [Paper-stated] Motivation: Full-model adaptation is costly enough to make efficient task transfer important.\n"
-                "- [Paper-stated] Why existing methods are not enough: Full updates spend parameters on broad changes rather than a narrow adaptation path.\n"
-                "- [Inferred rationale] Why this method is natural: If the bottleneck is update dimensionality, a residual adapter is a direct way to constrain the trainable subspace.\n"
-                "- Evidence pointer: Introduction / Section 1.\n\n",
-                "",
-            )
-            missing_notes = root / "missing_motivation.md"
-            missing_notes.write_text(missing_motivation, encoding="utf-8")
-            missing_quality = run_json(
-                "check_notes_quality.py",
-                "--notes",
-                str(missing_notes),
-                "--batch-heading",
-                "B01 Skim Notes",
-                "--expected",
-                "1",
-                cwd=root,
-            )
-            missing_fields = missing_quality["needs_review"][0]["missing"]
-            self.assertIn("Motivation content", missing_fields)
-            self.assertIn("Why existing methods are not enough content", missing_fields)
-            self.assertIn("Why this method is natural content", missing_fields)
-            self.assertIn("Evidence pointer content", missing_fields)
-            self.assertIn("[Inferred rationale] content", missing_fields)
-
-    def test_check_batch_and_prepare_batch_surface_missing_pdf_human_report(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            source = root / "awesome.md"
-            source.write_text(
-                "\n".join([
-                    "- [Already Local](https://arxiv.org/abs/2401.00001)",
-                    "- [Needs Download](https://arxiv.org/abs/2401.00002)",
-                ]),
-                encoding="utf-8",
-            )
-            init = run_json(
-                "literature_workflow.py",
-                "--root",
-                str(root),
-                "--action",
-                "init-from-awesome",
-                "--source",
-                str(source),
-                "--allow-write",
-                cwd=root,
-            )
-            self.assertFalse(init["errors"])
-            accepted = run_json(
-                "literature_workflow.py",
-                "--root",
-                str(root),
-                "--action",
-                "accept-phase1",
-                "--allow-write",
-                cwd=root,
-            )
-            self.assertFalse(accepted["errors"])
-            raw = root / "raw_papers"
-            raw.mkdir(exist_ok=True)
-            (raw / "arxiv_2401_00001.pdf").write_bytes(b"%PDF-" + b"x" * 200)
-
-            checked = run_json(
-                "literature_workflow.py",
-                "--root",
-                str(root),
-                "--action",
-                "check-batch",
-                "--batch",
-                "B01",
-                cwd=root,
-            )
-
-            self.assertIn("missing_pdfs", checked)
-            self.assertEqual([item["paper_id"] for item in checked["missing_pdfs"]], ["arxiv:2401.00002"])
-            self.assertIn("https://arxiv.org/pdf/2401.00002.pdf", checked["human_report"])
-            self.assertNotIn("https://arxiv.org/pdf/2401.00001.pdf", checked["human_report"])
-
-            prepared = run_json(
-                "literature_workflow.py",
-                "--root",
-                str(root),
-                "--action",
-                "prepare-batch",
-                "--batch",
-                "B01",
-                "--allow-write",
-                cwd=root,
-            )
-
-            self.assertIn("missing_pdfs", prepared)
-            self.assertEqual([item["paper_id"] for item in prepared["missing_pdfs"]], ["arxiv:2401.00002"])
-            self.assertIn("B01 暂停：缺少 1 篇 PDF", prepared["human_report"])
-            self.assertIn("https://arxiv.org/pdf/2401.00002.pdf", prepared["human_report"])
-
-    def test_parse_skim_motivation_rationale_fields(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            notes = root / "skim.md"
-            notes.write_text(
-                "\n".join([
-                    "## B01 Skim Notes",
-                    "",
-                    "#### Test Paper (arxiv:2401.00001)",
-                    "",
-                    "- Note type: phase2-skim-v1",
-                    "- Problem: problem",
-                    "- Why hard: hard",
-                    "### 2. Motivation / Method Rationale",
-                    "- [Paper-stated] Motivation: The paper frames latent reasoning as important for efficient inference.",
-                    "- [Paper-stated] Why existing methods are not enough: Prior methods expose token-level traces or require extra supervision.",
-                    "- [Inferred rationale] Why this method is natural: If reasoning can occur in hidden states, optimizing that space is a direct intervention.",
-                    "- Evidence pointer: Introduction / Section 1 / Method opening.",
-                    "- One-sentence method: method",
-                    "- Intuitive view: view",
-                    "- Mathematical view: math",
-                    "- Diagram type: ASCII computation flow",
-                    "- Diagram verification: skim-level from packet",
-                    "- Evidence strength: medium",
-                    "- Deep-read recommendation: maybe",
-                    "",
-                ]),
-                encoding="utf-8",
-            )
-
-            parsed = run_json("parse_reading_notes.py", "--notes", str(notes), cwd=root)
-            paper = parsed["papers"][0]
-
-            self.assertIn("latent reasoning", paper["motivation"])
-            self.assertIn("extra supervision", paper["why_existing_methods_are_not_enough"])
-            self.assertIn("hidden states", paper["why_this_method_is_natural"])
-            self.assertIn("Section 1", paper["motivation_evidence_pointer"])
-            self.assertIn("hidden states", "\n".join(paper["inferred_rationales"]))
-
+        self.assertIn("<!-- method-comparison:start -->", template)
+        self.assertIn("<!-- method-comparison:end -->", template)
     def test_phase2_gate_and_phase3_stub_filter(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             row = write_inventory(root)
-            manifest, pdf = create_ready_batch(root, row)
-            pdf.with_suffix(".body.txt").unlink()
-            blocked = subprocess.run(
+            _manifest, pdf = create_ready_batch(root, row)
+            removed_action = subprocess.run(
                 [sys.executable, "-B", str(SCRIPTS / "literature_workflow.py"), "--root", str(root), "--action", "phase2-skim", "--batch", "B01", "--allow-write"],
                 cwd=str(root),
                 text=True,
                 capture_output=True,
             )
-            self.assertNotEqual(blocked.returncode, 0)
-            self.assertIn("missing valid .body.txt", blocked.stdout)
+            self.assertNotEqual(removed_action.returncode, 0)
+            self.assertIn("invalid choice", removed_action.stderr)
 
             good_deep = pdf.with_suffix(".deep.txt")
             good_deep.write_text("appendix " * 300, encoding="utf-8")
@@ -1525,8 +959,7 @@ class ThreeStageWorkflowTests(unittest.TestCase):
                 writer = csv.DictWriter(handle, fieldnames=["arxiv_id", "selected_for_phase3"])
                 writer.writeheader()
                 writer.writerows([{"arxiv_id": "2401.00001", "selected_for_phase3": "yes"}, {"arxiv_id": "2401.00002", "selected_for_phase3": "yes"}])
-            output = root / "deep_stubs.md"
-            run_json(
+            result = run_json(
                 "write_batch_note_stubs.py",
                 "--manifest",
                 str(deep_manifest),
@@ -1535,28 +968,15 @@ class ThreeStageWorkflowTests(unittest.TestCase):
                 "--candidates",
                 str(candidates),
                 "--output",
-                str(output),
+                str(root / "deep.md"),
                 "--allow-write",
                 cwd=root,
             )
-            text = output.read_text(encoding="utf-8")
+            self.assertEqual(result["stubs"], 1)
+            text = (root / "deep.md").read_text(encoding="utf-8")
+            self.assertIn("- Note type: phase3-deep-v2", text)
             self.assertIn("2401.00001", text)
             self.assertNotIn("2401.00002", text)
-            self.assertIn("- Note type: phase3-deep-v2", text)
-            run_json(
-                "write_final_synthesis.py",
-                "--inventory",
-                str(root / "phase1_inventory.csv"),
-                "--output-dir",
-                str(root),
-                "--overwrite",
-                "--allow-write",
-                cwd=root,
-            )
-            questions = (root / "open_questions.md").read_text(encoding="utf-8")
-            self.assertIn("## Phase 3 Extraction Failures", questions)
-            self.assertIn("2401.00002", questions)
-
     def test_final_synthesis_reports_accepted_deep_failures_without_duplicates(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -1717,53 +1137,11 @@ class ThreeStageWorkflowTests(unittest.TestCase):
             run_json("write_skim_overview.py", "--notes", str(notes), "--output", str(overview), "--candidates", str(candidates), "--allow-write", cwd=root)
             self.assertFalse(list(root.glob("*.tmp")))
 
-    def test_skim_diagram_metadata_and_needs_review(self) -> None:
+    def test_current_deep_v2_diagram_metadata_needs_review(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            missing_type = root / "missing_type.md"
-            missing_type.write_text(complete_skim_notes().replace("- Diagram type: inference / reasoning pipeline\n", ""), encoding="utf-8")
-            quality = run_json(
-                "check_notes_quality.py",
-                "--notes",
-                str(missing_type),
-                "--batch-heading",
-                "B01 Skim Notes",
-                "--expected",
-                "1",
-                cwd=root,
-            )
-            self.assertIn("Diagram type content", quality["needs_review"][0]["missing"])
-
-            review = root / "review.md"
-            review.write_text(complete_skim_notes().replace("- Diagram verification: verified", "- Diagram verification: needs verification"), encoding="utf-8")
-            quality = run_json(
-                "check_notes_quality.py",
-                "--notes",
-                str(review),
-                "--batch-heading",
-                "B01 Skim Notes",
-                "--expected",
-                "1",
-                cwd=root,
-            )
-            self.assertIn("Diagram verification needs review", quality["needs_review"][0]["missing"])
-
-            missing_verification = root / "missing_verification.md"
-            missing_verification.write_text(complete_skim_notes().replace("- Diagram verification: verified\n", ""), encoding="utf-8")
-            quality = run_json(
-                "check_notes_quality.py",
-                "--notes",
-                str(missing_verification),
-                "--batch-heading",
-                "B01 Skim Notes",
-                "--expected",
-                "1",
-                cwd=root,
-            )
-            self.assertIn("Diagram verification content", quality["needs_review"][0]["missing"])
-
             deep_review = root / "deep_review.md"
-            deep_review.write_text(complete_deep_notes().replace("- Diagram verification: verified", "- Diagram verification: needs review"), encoding="utf-8")
+            deep_review.write_text(complete_deep_v2_notes().replace("- Diagram verification: verified", "- Diagram verification: needs review"), encoding="utf-8")
             quality = run_json(
                 "check_notes_quality.py",
                 "--notes",
@@ -1775,8 +1153,7 @@ class ThreeStageWorkflowTests(unittest.TestCase):
                 cwd=root,
             )
             self.assertIn("Diagram verification must be verified", quality["needs_review"][0]["missing"])
-
-    def test_harness_registry_v1_v2_and_legacy_status(self) -> None:
+    def test_harness_registry_v2_current_status(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             notes = root / "notes" / "accepted" / "B01.md"
@@ -1793,13 +1170,13 @@ class ThreeStageWorkflowTests(unittest.TestCase):
                                 "type": "note",
                                 "path": "notes/accepted/B01.md",
                                 "batch": "B01",
-                                "quality_status": "accepted",
+                                "status": "active",
                             },
                             {
                                 "type": "overview",
                                 "path": "reports/accepted_overviews/missing.md",
                                 "batch": "B01",
-                                "quality_status": "accepted",
+                                "status": "active",
                             },
                         ],
                     }
@@ -1839,11 +1216,12 @@ class ThreeStageWorkflowTests(unittest.TestCase):
             status = run_json("literature_harness.py", "--root", str(root), "--action", "status", cwd=root)
             self.assertEqual(status["effective_status"], "registry_available")
 
-            legacy_root = root / "legacy"
-            legacy_root.mkdir()
-            (legacy_root / "phase2_skim_notes.md").write_text("# Notes\n\nDone.\n", encoding="utf-8")
-            legacy_status = run_json("literature_harness.py", "--root", str(legacy_root), "--action", "status", cwd=legacy_root)
-            self.assertEqual(legacy_status["effective_status"], "legacy_files_available")
+            partial_current_root = root / "partial_current"
+            partial_current_root.mkdir()
+            (partial_current_root / "inventory").mkdir()
+            (partial_current_root / "inventory" / "workflow_inventory.csv").write_text("schema_version,paper_id,dedup_key,reading_batch\n", encoding="utf-8")
+            partial_status = run_json("literature_harness.py", "--root", str(partial_current_root), "--action", "status", cwd=partial_current_root)
+            self.assertEqual(partial_status["effective_status"], "no_accepted_registry")
 
     def test_harness_root_clean_context_and_candidates(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -2052,7 +1430,8 @@ class ThreeStageWorkflowTests(unittest.TestCase):
             )
             self.assertTrue(superseded["registered"])
             registry = json.loads((root / "batches" / "accepted_artifacts.json").read_text(encoding="utf-8"))
-            self.assertEqual(registry["artifacts"][0]["quality_status"], "superseded")
+            self.assertEqual(registry["artifacts"][0]["status"], "superseded")
+            self.assertNotIn("quality_status", registry["artifacts"][0])
             self.assertEqual(registry["artifacts"][1]["supersedes"], ["notes/accepted/B01.md"])
             artifact_ids = [item.get("artifact_id") for item in registry["artifacts"]]
             self.assertEqual(len(artifact_ids), len(set(artifact_ids)))
@@ -2206,7 +1585,7 @@ class ThreeStageWorkflowTests(unittest.TestCase):
             status_text = (root / "PROJECT_STATUS.md").read_text(encoding="utf-8")
             self.assertIn("## Current Phase", status_text)
             agents_text = (root / "AGENTS.md").read_text(encoding="utf-8")
-            source_section = agents_text.split("## Legacy Compatibility")[0]
+            source_section = agents_text.split("## Current-only Contract")[0]
             self.assertIn("notes/accepted/", source_section)
             self.assertNotIn("phase2_skim_notes.md", source_section)
             registry = json.loads((root / "batches" / "accepted_artifacts.json").read_text(encoding="utf-8"))

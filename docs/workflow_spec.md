@@ -93,29 +93,9 @@ reports/accepted_overviews/Bxx_overview.md
 candidates/accepted/Bxx_deep_reading_candidates.csv
 ```
 
-The historical candidate-table filename remains valid for compatibility. Its current semantics are reading priority and reading navigation, not an automatic deep-reading queue.
+Candidate tables are current reading-priority navigation tables, not automatic deep-reading queues.
 
 Register these outputs in `batches/accepted_artifacts.json`. Drafts, packets, manifests, extracted text, and repair receipts are not accepted user-facing outputs until explicitly registered.
-
-### Legacy Layout
-
-The older flat layout remains readable and valid for existing projects:
-
-```text
-phase1_inventory.csv
-phase1_report.md
-phase2_skim_notes.md
-phase2_skim_overview.md
-phase2_deep_reading_candidates.csv
-phase3_deep_notes.md
-phase2_reading_notes.md
-final_literature_map.md
-key_papers.md
-research_opportunities.md
-open_questions.md
-```
-
-Do not batch-rewrite historical notes or move old project outputs merely to adopt template-v2.
 
 ### Registry Authority
 
@@ -123,9 +103,9 @@ Do not batch-rewrite historical notes or move old project outputs merely to adop
 batches/accepted_artifacts.json
 ```
 
-This registry is the authority for accepted outputs: notes, overviews, candidate tables, selected final reports, and accepted warning/failure records. It is not the authority for raw source readiness. Filesystem facts still determine whether PDFs, manifests, body text, deep text, and legacy files exist. When registry state and `.codex` receipts conflict, report a warning; do not overwrite or migrate registry state unless the user explicitly asks.
+This registry is the authority for accepted outputs: notes, overviews, candidate tables, selected final reports, and accepted warning/failure records. Artifact lifecycle is canonicalized in `status = active | superseded | archived`. `quality_status` is not a lifecycle field and should not be written by current registry writers. Filesystem facts still determine whether PDFs, manifests, body text, and deep text exist.
 
-Template-v2 projects should use stricter registry checks: accepted notes, overviews, and candidate tables must include `batch`; accepted batch skim notes should include exact `paper_ids`; archive paths should not be active accepted outputs. Legacy micro-batch notes may include `micro_batch`, but new Phase 2 skim work should use one batch note per batch.
+Current projects use strict registry checks: active notes, overviews, and candidate tables must include `batch`; active batch skim notes must include exact `paper_ids`; archive paths must not be active outputs. New Phase 2 skim work uses one batch note per batch.
 
 ## Phase 1: Inventory, Taxonomy, And Batch Plan
 
@@ -184,7 +164,7 @@ Use the canonical per-paper heading and five internal blocks:
 #### 5. Evidence and uncertainty
 ```
 
-For new drafts, this heading is exact and `{title}` must be nonempty. Matching a heading because it merely contains `paper_id` or a bare arXiv ID is legacy compatibility only.
+For new drafts, this heading is exact and `{title}` must be nonempty.
 
 Internal sections must use `####`, not `###`, so v2 parsers can treat only `### {paper_id} - {title}` as a paper entry. Do not add visible `Diagram type`, `Diagram verification`, `Evidence strength`, `Reading decision`, `Read priority`, or `Deep-note candidate` fields to new Phase 2 skim notes.
 
@@ -209,8 +189,6 @@ reports/accepted_overviews/Bxx_overview.md
 candidates/accepted/Bxx_deep_reading_candidates.csv
 ```
 
-Legacy projects may continue using `phase2_skim_notes.md`, `phase2_skim_overview.md`, and `phase2_deep_reading_candidates.csv` without migration.
-
 For low-context routine work, prepare or select bounded evidence packets before note writing when available. Do not load PDFs, full `.body.txt` / `.deep.txt`, accepted notes, accepted overviews, accepted candidate tables, deep notes, or archive repair notes into model context. Batch/packet manifests needed for paper_id/title/packet mapping remain allowed.
 
 Packet-only routine:
@@ -223,7 +201,7 @@ Packet-only routine:
    - Stop only on `blocked`, `draft_complete`, or `complete`. After `draft_complete`, run `accept-draft` instead of reporting readiness as the final result.
 5. Append or merge the new paper notes into one batch-level draft, `notes/drafts/Bxx.md`; do not overwrite earlier micro-batch entries without explicit user confirmation.
 6. Do not accept micro-batches. `accept-draft` is a full-batch gate and computes expected `paper_ids` / `source_packets` from pass-quality packets in the packet manifest, not from draft frontmatter alone.
-7. Before acceptance, run the batch-note mechanical check. Every expected paper must have one canonical `### {paper_id} - {title}` entry, the five canonical blocks, a method-comparison marker, `KEY CHANGED STEP`, and at least one evidence pointer. Missing structure, stale Scope micro-batch coverage, forbidden paths, TODOs, and placeholders are hard errors; dense non-bulleted cross-paper comparison, generic motivation, or legacy recommendation fields are warnings/review flags.
+7. Before acceptance, run the batch-note mechanical check. Every expected paper must have one canonical `### {paper_id} - {title}` entry, the five canonical blocks, a method-comparison marker, `KEY CHANGED STEP`, and at least one evidence pointer. Missing structure, stale Scope micro-batch coverage, forbidden paths, TODOs, and placeholders are hard errors; dense non-bulleted cross-paper comparison, generic motivation, or historical recommendation fields are warnings/review flags.
 8. Register the accepted batch note with `artifact_type=batch_skim_note`, `batch`, exact accepted `paper_ids`, and at most lightweight `warning_codes` / `review_status`.
 9. Run `check-overview-gate` before writing a cumulative overview or candidate table; the gate is based on paper coverage, not micro-batch file count.
 
@@ -237,9 +215,9 @@ The candidate CSV is a reading-navigation table. It should index skim notes with
 paper_id,title,main_problem,motivation,core_method,key_changed_step,evidence_uncertainty,first_sections_to_read,possible_gpt_question
 ```
 
-For compatibility, candidate tables may also contain `technical_route`, `read_priority`, `read_reason`, `deep_note_candidate`, `deep_note_reason`, `arxiv_id`, `reading_batch`, `recommendation`, `recommendation_reason`, `evidence_strength`, `selected_for_phase3`, and `selection_notes`. These legacy/manual columns may be preserved, but new skim notes must not be required to generate them. Template-v2 candidate tables should use `paper_id` as the stable identity. Legacy candidate tables may still use `arxiv_id`; workflow tools must normalize either field and preserve `selected_for_phase3` and `selection_notes` by normalized `paper_id`.
+Candidate tables may preserve historical columns such as `technical_route`, `read_priority`, `read_reason`, `deep_note_candidate`, `deep_note_reason`, `arxiv_id`, `reading_batch`, `recommendation`, `recommendation_reason`, `evidence_strength`, `selected_for_phase3`, and `selection_notes`, but current tools use `paper_id` as the stable identity and `promote-to-deep` as the promotion entrypoint.
 
-Phase 3 promotion must remain explicit. For template-v2, `promote-to-deep` is the primary action; direct `selected_for_phase3=yes` editing is legacy/manual compatibility. Do not infer deep-note decisions from skim-note text.
+Phase 3 promotion must remain explicit. `promote-to-deep` is the primary action. Do not infer deep-note decisions from skim-note text.
 
 ## Phase 3: Optional Promoted Deep Reading
 
@@ -254,9 +232,9 @@ Selection rules:
 
 For selected papers, create `.deep.txt` sidecars that include appendices. Do not overwrite `.body.txt`.
 
-Template-v2 Phase 3 uses the accepted candidate table registered in `batches/accepted_artifacts.json` when available, not the legacy flat `phase2_deep_reading_candidates.csv`. Selected-paper PDF paths come from the batch manifest in `phase2_papers/` and its `local_pdf_path` / managed PDF path fields; do not reconstruct managed PDF names from inventory metadata when a manifest exists.
+Template-v2 Phase 3 uses the active accepted candidate table registered in `batches/accepted_artifacts.json`. Selected-paper PDF paths come from the batch manifest in `phase2_papers/` and its `local_pdf_path` / managed PDF path fields; do not reconstruct managed PDF names from inventory metadata when a manifest exists.
 
-Template-v2 Phase 3 is batch-specific. Preparation writes `phase2_papers/Bxx_deep_text_manifest.json` and `phase2_papers/Bxx_phase3_deep_note_stubs.md`. The accepted note lives at `notes/accepted/Bxx_deep.md`; legacy `phase3_deep_notes.md` remains readable for older projects only.
+Template-v2 Phase 3 is batch-specific. Preparation writes `phase2_papers/Bxx_deep_text_manifest.json` and `phase2_papers/Bxx_phase3_deep_note_stubs.md`. The accepted note lives at `notes/accepted/Bxx_deep.md`.
 
 Before accepting a Phase 3 note, run selected-paper coverage validation: every `selected_for_phase3=yes` paper must have exactly one recognizable deep-note entry, no selected paper may be missing, and unexpected paper IDs should fail the gate. Register accepted notes as `artifact_type=phase3_deep_note` with exact `paper_ids`, content hash, source candidate table, and source deep manifest.
 
@@ -320,10 +298,9 @@ Template-v2 first aggregates active registry artifacts:
 ```text
 active phase3_deep_note + active batch_skim_note
 + active candidate tables + active overviews
--> inventory fallback
 ```
 
-For the same paper, selected deep notes override or supplement skim evidence, but skim notes remain in the input set. Only a missing registry or detected legacy layout uses `phase3_deep_notes.md`, `phase2_skim_notes.md`, candidate flat files, and legacy `phase2_reading_notes.md` as fallback inputs.
+For the same paper, selected deep notes override or supplement skim evidence, but skim notes remain in the input set. Final synthesis never reads outside active registry artifacts; repair or register current active artifacts before synthesis.
 For `phase3-deep-v2`, the draft also summarizes selected-paper research judgments and the three-way method comparison table.
 Deep notes are high-confidence evidence when present, but they are not required. Papers without deep notes must be treated as skim-level evidence only; important claims about them should be labeled provisional and may require manual confirmation or later promotion.
 
@@ -356,17 +333,17 @@ forbidden context path reference
 TODO or placeholder content
 ```
 
-Warnings/review flags include dense non-bulleted cross-paper comparison, generic motivation, legacy recommendation fields, or other semantic-quality concerns that are useful for review but should not initially block acceptance. Accepted registry entries may store lightweight `review_status` and `warning_codes`; detailed checker output belongs in stdout or logs/reports.
+Warnings/review flags include dense non-bulleted cross-paper comparison, generic motivation, historical recommendation fields, or other semantic-quality concerns that are useful for review but should not initially block acceptance. Accepted registry entries may store lightweight `review_status` and `warning_codes`; detailed checker output belongs in stdout or logs/reports.
 
-For historical `phase2-skim-v1`, the compatibility parser may still check old non-empty fields such as `Evidence strength`, `Deep-read recommendation`, `Diagram verification`, and related legacy metadata when `scripts/check_notes_quality.py` is explicitly run. These legacy fields are not required for new canonical Phase 2 skim notes.
+Low-level parsers may still be used manually for archival inspection, but historical note fields are not part of the current acceptance contract.
 
 The Motivation / Method Rationale requirements apply to newly generated skim notes and explicit quality checks. Do not batch-rewrite, migrate, or retroactively revalidate already accepted notes/artifacts solely because they predate this subsection.
 
-Ordinary `validate-project` checks accepted registry entry shape, path existence, content hash, artifact type/batch/active consistency, and lightweight integrity. Canonical heading/content differences in already accepted notes are warnings. Content-level revalidation must be opt-in through a future explicit strict mode or an `acceptance_contract_version`; `accept-draft` remains strict for every new draft.
+`validate-project` checks current registry entry shape, active path existence, active content hash, artifact type/batch/active consistency, and canonical active batch-skim-note content. Hash mismatches, missing active paths, and noncanonical active batch notes are hard failures. Archived and superseded artifacts are ignored.
 
-`Diagram type` and the stricter structural diagram rules are checked when `scripts/check_notes_quality.py` is explicitly run. They remain advisory so historical notes do not fail during ordinary parsing, overview generation, or state detection. Older skim notes may retain redundant diagram metadata fields; do not rewrite or reject them solely for that reason.
+`Diagram type` and stricter structural diagram rules are checked when `scripts/check_notes_quality.py` is explicitly run. Current accepted drafts are still gated by `accept-draft`.
 
-For historical `phase3-deep-v1`, retain the existing compatibility checks. Do not rewrite or reject old notes solely because they use the earlier merged comparison table or redundant diagram metadata.
+Historical Phase 3 note checks are archival/debug helpers only and are not part of the current normal path.
 
 For new `phase3-deep-v2`, require a short decision summary, a single full technical-mechanism explanation, decision-critical evidence, reproduction-critical details, a structured research judgment, tagged facts/interpretation/evidence, an annotated comparison diagram, a populated three-way comparison table, and a populated Claim-Evidence-Risk-Use row.
 
@@ -374,27 +351,26 @@ Reject untouched Mermaid placeholders. Require baseline and ours component lists
 
 When `scripts/check_notes_quality.py` is explicitly run, also apply strict diagram checks:
 
-1. New skim diagrams contain the canonical marker, `Direct baseline`, `Representative prior` or explicit packet-only `N/A`, `This paper`, and `KEY CHANGED STEP`. Legacy skim notes may still contain a comparison table, but new canonical skim notes do not require one.
+1. New skim diagrams contain the canonical marker, `Direct baseline`, `Representative prior` or explicit packet-only `N/A`, `This paper`, and `KEY CHANGED STEP`.
 2. Deep notes contain the `Annotated Method Comparison Diagram` heading, baseline/prior-or-`N/A`/this-paper roles, and the changed step. For `phase3-deep-v2`, claimed benefit and weaknesses belong in the three-way table rather than crowded diagram nodes.
-3. Deep diagrams stay within four compared methods and 3-5 nodes per role for the main ASCII/text pipeline; legacy Mermaid diagrams remain readable but should not be the default.
+3. Deep diagrams stay within four compared methods and 3-5 nodes per role for the main ASCII/text pipeline.
 4. Notes flag obvious long repeated method explanations.
 5. Potentially speculative diagram claims without `[Interpretation]` or `[Needs verification]` are reported for review.
 
 These strict checks are advisory. Parser, overview, candidate generation, and state detection retain compatibility behavior and do not retroactively block old notes.
 
-Legacy paragraph notes, v2 tagged notes, and old v3 12-section notes remain parseable. Do not require migration.
+Historical note parsers may be used for archival inspection only. Current projects should keep accepted notes in canonical template-v2 form.
 
 ## State Detection
 
 The state checker reports:
 
 ```text
-workflow_mode: three_stage | legacy | hybrid
+workflow_mode: three_stage
 phase2.skim_started
 phase2.skim_complete
 phase3.deep_started
 phase3.deep_complete
-legacy.phase2_reading_notes_present
 phase3.accepted_failure_entries
 ```
 
@@ -442,7 +418,7 @@ write final synthesis
 complete
 ```
 
-Do not report Phase 3 files as missing before selected papers exist. Do not report missing skim notes merely because `raw_papers/` or `phase2_papers/` exists. If an old project has populated `phase2_reading_notes.md` and no new skim files, use legacy mode.
+Do not report Phase 3 files as missing before selected papers exist. Do not report missing skim notes merely because `raw_papers/` or `phase2_papers/` exists. If accepted registry artifacts are missing, register current artifacts before continuing.
 
 ## Runner Actions
 
@@ -457,8 +433,6 @@ python scripts/literature_workflow.py --root . --action promote-to-deep --batch 
 python scripts/literature_workflow.py --root . --action phase3-deep --plan-only
 python scripts/literature_workflow.py --root . --action final --plan-only
 ```
-
-`phase2-skim` is retained only as a legacy/stub-only/recovery action. It is not the template-v2 main path for packet-only Phase 2 writing; use `run-next-microbatch` for that path.
 
 Use the read-only harness for registry, root-cleanliness, context, and representative-candidate checks:
 
@@ -481,11 +455,11 @@ python scripts/literature_harness.py --root . --action register-artifact --artif
 python scripts/literature_harness.py --root . --action register-artifact --artifact-type note --artifact-path notes/accepted/B01-v2.md --supersedes notes/accepted/B01.md --allow-write
 ```
 
-The register action is append-oriented. It creates v2 registries for new projects, refuses legacy v1 registry rewrites, and marks explicitly superseded active entries as `superseded` before appending the replacement entry.
+The register action is append-oriented. It creates v2 registries for new projects and marks explicitly superseded active entries as `superseded` before appending the replacement entry.
 
 The archive action is plan-first. Use `--plan-only` before `--allow-write`; it moves only registry entries already marked `superseded` into `archive/superseded_notes/`, `archive/superseded_reports/`, `archive/raw_tables/`, or `archive/repair_history/`.
 
-All runner writes require `--allow-write`, including legacy CLI spellings. Network actions require `--allow-network`. Real PDF downloads require `--download --allow-network --allow-write`.
+All runner writes require `--allow-write`. Network actions require `--allow-network`. Real PDF downloads require `--download --allow-network --allow-write`.
 
 In Codex sessions where the user explicitly approves online literature initialization, prefer the `research-online` profile for shell network access. This avoids repeated failed clone/fetch attempts under the default offline sandbox while preserving separate approval gates for arXiv metadata, PDF download, dependencies, and external code execution.
 
@@ -493,9 +467,6 @@ For template-v2 projects, `prepare-batch` performs real PDF text extraction with
 
 Low-level helpers enforce the same gates. `--overwrite` permits replacing an existing output but never substitutes for `--allow-write`. Node validation may run without write permission only with `--no-status-write`.
 
-Keep existing `prepare-batch`, bare `--batch Bxx`, `--phase phase1`, `--phase final`, and legacy notes behavior for compatibility.
-
-Compatibility keeps command names and file formats, not permission bypasses.
 
 Explicitly accepted text-extraction failures may be recorded in optional `accepted_failures.json`:
 

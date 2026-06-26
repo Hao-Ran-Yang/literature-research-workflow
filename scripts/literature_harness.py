@@ -8,6 +8,7 @@ from pathlib import Path
 
 from workflow_safety import atomic_write_json, atomic_write_text, require_write_permission
 from awesome_literature_harness import validate_project as validate_project_v2
+from registry_utils import is_active_artifact, lifecycle_status, normalize_artifact_entry
 
 
 REGISTRY_PATH = Path("batches") / "accepted_artifacts.json"
@@ -102,36 +103,23 @@ def registry_entries(data) -> tuple[list[dict], str, list[str]]:
         return [], "missing", []
     if isinstance(data, dict) and "__error__" in data:
         return [], "invalid-json", [f"registry JSON could not be parsed: {data['__error__']}"]
-    raw_entries = data
-    fmt = "v1-list"
+    if not isinstance(data, dict):
+        return [], "unsupported", ["registry must be a v2 object with an artifacts list"]
     if isinstance(data, dict):
         raw_entries = data.get("artifacts", [])
         fmt = "v2-object" if str(data.get("version", "2")) == "2" else "object"
         if not isinstance(raw_entries, list):
             return [], fmt, ["registry field `artifacts` must be a list"]
-    if not isinstance(raw_entries, list):
-        return [], "unknown", ["registry must be a list or an object with an artifacts list"]
 
     entries = []
     for idx, item in enumerate(raw_entries):
-        if isinstance(item, str):
-            entries.append(
-                {
-                    "type": "other",
-                    "path": item,
-                    "quality_status": "accepted",
-                    "_legacy": True,
-                    "_index": idx,
-                }
-            )
-        elif isinstance(item, dict):
-            entry = dict(item)
+        if isinstance(item, dict):
+            entry = normalize_artifact_entry(item)
             entry.setdefault("type", "other")
-            entry.setdefault("quality_status", "accepted")
             entry["_index"] = idx
             entries.append(entry)
         else:
-            warnings.append(f"registry entry #{idx} must be a string or object")
+            warnings.append(f"registry entry #{idx} must be an object")
     return entries, fmt, warnings
 
 
@@ -145,12 +133,12 @@ def validate_registry(root: Path) -> dict:
 
     for entry in entries:
         rel = str(entry.get("path", "")).strip()
-        status = str(entry.get("quality_status", "accepted")).strip().lower() or "accepted"
+        status = lifecycle_status(entry)
         item = {
             "index": entry.get("_index"),
             "type": entry.get("type", "other"),
             "path": rel,
-            "quality_status": status,
+            "status": status,
             "exists": False,
             "legacy": bool(entry.get("_legacy")),
         }
@@ -162,12 +150,12 @@ def validate_registry(root: Path) -> dict:
             item["exists"] = project_path(root, rel).exists()
             if not item["exists"]:
                 warnings.append(f"registered artifact path does not exist: {rel}")
-            if "archive" in Path(rel).parts and status != "superseded":
+            if "archive" in Path(rel).parts and status == "active":
                 warnings.append(f"active registry entry points into archive: {rel}")
             is_phase1_report = entry.get("artifact_type") == "phase1_report" or str(rel).startswith("reports/accepted_overviews/phase1_report_")
             if not item["legacy"] and item["type"] in {"note", "overview", "candidate_table"} and not is_phase1_report and not entry.get("batch"):
                 errors.append(f"registry entry #{entry.get('_index')} type {item['type']} requires batch")
-            if status != "superseded":
+            if status == "active":
                 previous = active_paths.get(rel)
                 if previous is not None:
                     errors.append(f"duplicate active registry path: {rel} at entries {previous} and {entry.get('_index')}")
@@ -179,7 +167,7 @@ def validate_registry(root: Path) -> dict:
         "exists": path.exists(),
         "format": fmt,
         "entries": normalized,
-        "active_entries": sum(1 for item in normalized if item["quality_status"] != "superseded"),
+        "active_entries": sum(1 for item in normalized if item["status"] == "active"),
         "warnings": warnings,
         "errors": errors,
     }
@@ -189,7 +177,7 @@ def accepted_paths(registry: dict) -> set[str]:
     return {
         item["path"].replace("\\", "/")
         for item in registry.get("entries", [])
-        if item.get("path") and item.get("quality_status") != "superseded"
+        if item.get("path") and item.get("status") == "active"
     }
 
 
@@ -197,7 +185,7 @@ def registry_paths_by_status(registry: dict, status: str) -> set[str]:
     return {
         item["path"].replace("\\", "/")
         for item in registry.get("entries", [])
-        if item.get("path") and item.get("quality_status") == status
+        if item.get("path") and item.get("status") == status
     }
 
 
@@ -549,7 +537,7 @@ def check_overview_gate(root: Path, batch: str, packet_manifest: str, micro_batc
             continue
         if entry.get("type") != "note" and entry.get("artifact_type") not in {"batch_skim_note", "micro_batch_skim_note"}:
             continue
-        if entry.get("quality_status", entry.get("status", "accepted")) not in {"accepted", ""}:
+        if not is_active_artifact(entry):
             continue
         if entry.get("micro_batch"):
             accepted_micro_batches.append(entry.get("micro_batch"))
@@ -593,7 +581,7 @@ def load_registry_for_write(root: Path) -> tuple[dict, list[dict], list[str], li
     elif isinstance(data, dict) and "__error__" in data:
         return {}, [], warnings, [f"registry JSON could not be parsed: {data['__error__']}"]
     elif isinstance(data, list):
-        return {}, [], warnings, ["register-artifact will not rewrite legacy v1 list registries; create a v2 registry or migrate explicitly"]
+        return {}, [], warnings, ["register-artifact requires a current v2 object registry"]
     elif not isinstance(data, dict):
         return {}, [], warnings, ["registry must be a v2 object for register-artifact"]
     data.setdefault("version", 2)
@@ -626,7 +614,7 @@ def register_artifact(args, root: Path) -> dict:
     active_paths = {
         str(item.get("path", "")).replace("\\", "/"): item
         for item in artifacts
-        if isinstance(item, dict) and str(item.get("quality_status", "accepted")).lower() != "superseded"
+        if isinstance(item, dict) and is_active_artifact(item)
     }
     if rel in active_paths and rel not in supersedes:
         errors.append(f"active artifact is already registered: {rel}; use --supersedes {rel} to replace it explicitly")
@@ -647,16 +635,19 @@ def register_artifact(args, root: Path) -> dict:
     for superseded in supersedes:
         entry = active_paths.get(superseded)
         if entry is not None:
-            entry["quality_status"] = "superseded"
+            entry["status"] = "superseded"
+            entry.pop("quality_status", None)
             entry.setdefault("notes", "")
             note = f"Superseded by {rel}"
             entry["notes"] = f"{entry['notes']}; {note}" if entry["notes"] else note
 
+    requested_status = "superseded" if args.quality_status == "superseded" else "active"
     new_entry = {
         "artifact_type": args.artifact_type,
         "type": args.artifact_type,
         "path": rel,
-        "quality_status": args.quality_status,
+        "status": requested_status,
+        "review_status": "clean" if args.quality_status in {"accepted", "unknown"} else args.quality_status,
         "registered_at": datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z"),
     }
     if path.exists() and path.is_file():
@@ -724,7 +715,7 @@ def refresh_artifact_hash(args, root: Path) -> dict:
         item for item in artifacts
         if isinstance(item, dict)
         and str(item.get("path", "")).replace("\\", "/") == rel
-        and str(item.get("quality_status", item.get("status", "accepted"))).lower() != "superseded"
+        and is_active_artifact(item)
     ]
     if not matches:
         errors.append(f"active artifact is not registered: {rel}")
@@ -773,7 +764,7 @@ def archive_superseded(args, root: Path) -> dict:
     errors = []
     moves = []
     for entry in entries:
-        if entry.get("quality_status") != "superseded":
+        if lifecycle_status(entry) != "superseded":
             continue
         source = str(entry.get("path", "")).replace("\\", "/")
         if not is_project_relative(source):

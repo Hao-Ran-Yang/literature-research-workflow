@@ -41,21 +41,10 @@ For new projects, use the template-v2 layout as the default standard.
 - `candidates/accepted/`: accepted reading-priority candidate tables and optional deep-note promotion decisions.
 - `archive/`: superseded notes/reports, raw tables, and repair history. Do not use archive content as default model input.
 
-## Legacy Compatibility
+## Current-only Contract
 
-The following flat files remain readable for old projects. Preserve them and do not batch-rewrite them solely to adopt template-v2:
-
-- `phase1_inventory.csv`
-- `phase1_report.md`
-- `phase2_skim_notes.md`
-- `phase2_skim_overview.md`
-- `phase2_deep_reading_candidates.csv`
-- `phase3_deep_notes.md`
-- `phase2_reading_notes.md`
-- `final_literature_map.md`
-- `key_papers.md`
-- `research_opportunities.md`
-- `open_questions.md`
+This project uses the current template-v2 workflow. Accepted user-facing artifacts live under 
+otes/accepted/, eports/accepted_overviews/, candidates/accepted/, and atches/accepted_artifacts.json. Treat the registry as the only authority for accepted workflow inputs.
 
 ## Default Workflow Behavior
 
@@ -74,7 +63,6 @@ Recommended current commands:
 
 ```bash
 python scripts/check_workflow_state.py --root .
-python scripts/literature_workflow.py --root . --continue-workflow
 ```
 
 Prefer the current action-style entrypoints:
@@ -169,27 +157,27 @@ If needed, set `LITFLOW_NODE` or pass `--node-command` to point at an executable
 - For new Phase 2 notes, write compact packet-only skim notes: problem and difficulty, Motivation / Method Rationale, core method, method comparison diagram, and evidence/uncertainty. Do not add visible `Diagram type`, `Diagram verification`, `Evidence strength`, `Reading decision`, `Read priority`, or `Deep-note candidate` fields.
 - For batch-level skim notes, keep `Scope` stable across micro-batches: describe the full batch and packet-only status, and put changing coverage details only in `Coverage status`. Do not leave phrases such as `MB01 only`, `current coverage`, or `covering N of M` in Scope after the batch is complete. Write `Cross-paper comparison` as bullet points grouped by readable comparison dimensions.
 - Keep the Phase 2 Motivation / Method Rationale subsection short. Prefer Introduction, Method opening, and Conclusion/Discussion/Limitations evidence when available; treat Related Work as a fallback rather than routine skim context. Distinguish `[Paper-stated]` motivation from `[Inferred rationale]`, and include an evidence pointer such as `paper_id=..., packet=..., section=Introduction`.
-- For every new batch-level skim note, each frontmatter `paper_id` must use the exact heading `### {paper_id} - {nonempty title}`, followed by non-placeholder content and an evidence pointer. A heading that merely contains `paper_id` or a bare arXiv ID is legacy compatibility only. If migration from an old micro-batch note fails to parse a subsection, recover from the archived note or evidence packet instead of leaving a placeholder in the accepted batch note.
+- For every new batch-level skim note, each frontmatter `paper_id` must use the exact heading `### {paper_id} - {nonempty title}`, followed by non-placeholder content and an evidence pointer. If an old note cannot be parsed, recover from the evidence packet instead of leaving a placeholder in the accepted batch note.
 - If a benchmark, dataset, theory, or objective paper has no reliable representative prior, write `N/A: no representative prior identified.` plus a brief reason. Do not invent a prior to satisfy the diagram.
-- Use the cumulative skim overview and editable candidate CSV as a reading-priority guide. In template-v2 projects, enter the batch-scoped deep-note flow with the explicit `promote-to-deep --batch Bxx --paper-id ...` action. Do not use direct `selected_for_phase3` editing as the primary workflow; it remains legacy/manual compatibility. An explicit `--candidates` path overrides registry resolution, and multiple active candidate tables without a batch are ambiguous.
+- Use the cumulative skim overview and editable candidate CSV as a reading-priority guide. Enter the batch-scoped deep-note flow with the explicit `promote-to-deep --batch Bxx --paper-id ...` action. An explicit `--candidates` path overrides registry resolution, and multiple active candidate tables without a batch are ambiguous.
 - For Phase 3 preparation, resolve selected papers through the batch manifest in `phase2_papers/` and its `local_pdf_path` / managed PDF paths instead of reconstructing PDF names from inventory metadata.
 - For selected Phase 3 papers, include appendix-aware reading, a direct-baseline/prior/ours comparison, a decision-oriented Claim-Evidence-Risk-Use table, and reproduction/follow-up notes.
 - For template-v2 Phase 3, prepare batch-specific deep text manifests and stubs (`phase2_papers/Bxx_deep_text_manifest.json`, `phase2_papers/Bxx_phase3_deep_note_stubs.md`). Stubs are scaffolding only and should not be treated as the reading context.
-- The canonical accepted template-v2 deep note is `notes/accepted/Bxx_deep.md`; `phase3_deep_notes.md` is a legacy flat-layout path only.
+- The canonical accepted template-v2 deep note is `notes/accepted/Bxx_deep.md`.
 - Accept Phase 3 notes with a selected-paper coverage gate: the accepted note must match the `selected_for_phase3=yes` paper IDs exactly and should be registered as `artifact_type=phase3_deep_note` with `paper_ids`, source candidate table, source deep manifest, and content hash.
 - In Phase 3, keep the initial reading decision in the opening summary and the final reading decision in the closing research judgment. If no reliable representative prior exists, use explicit `N/A` values in the diagram and the comparison-table prior column.
 - Require a computation-flow diagram in every new note. For skim notes, default to an ASCII pipeline with exactly three roles: `Direct baseline`, `Representative prior`, and `This paper`. Keep each line to at most 4-5 nodes.
 - For deep notes, require an `Annotated Method Comparison Diagram` with baseline, one or two representative priors, and this paper. Default to an ASCII/text pipeline using the same canonical roles as Phase 2 but with Phase 3-level specificity about representation, objective, module, optimization, or inference procedure. Use at most 3-5 nodes per role, and add at most one auxiliary Mermaid or text diagram only when critical information cannot fit in the main comparison. Keep the main diagram focused on computation flow and the `KEY CHANGED STEP`; put weaknesses, benefits, evidence, and remaining risks in the comparison table.
 - For skim diagrams, keep final visible content to the method-comparison marker and compact ASCII diagram. The diagram must include `Direct baseline`, `Representative prior`, `This paper`, and `KEY CHANGED STEP`. Deep notes must cite a section, figure, or appendix location supporting the diagram. Mark speculative explanations as `[Interpretation]` or `[Needs verification]`.
 - Distinguish `[Paper-stated]`, `[Interpretation]`, and `[Needs verification]`. Do not treat a single paper's self-positioning as field consensus.
-- Keep legacy, v2, and old v3 notes compatible. Do not batch-rewrite existing notes solely to adopt the new workflow.
+- Keep accepted current notes in canonical template-v2 form. Do not batch-rewrite archived old notes in place.
 - Important claims should cite section, table, or figure evidence when possible.
 - Limitations and uncertainties should be explicitly recorded.
 
 ## Final Synthesis Policy
 
 - Do not write confident synthesis from abstracts or skim-level notes. Label skim-level outputs clearly.
-- In template-v2, aggregate active `batch_skim_note`, `phase3_deep_note`, candidate-table, and overview artifacts from `batches/accepted_artifacts.json`. Use legacy flat files only when the registry/layout is absent; retain skim inputs even when a matching deep note supplies stronger evidence.
+- Aggregate active `batch_skim_note`, `phase3_deep_note`, candidate-table, and overview artifacts from `batches/accepted_artifacts.json`. retain skim inputs even when a matching deep note supplies stronger evidence.
 - `final_literature_map.md`: describe field structure, method families, timeline, and unresolved tensions.
 - `key_papers.md`: explain why each paper matters and what evidence supports its importance.
 - `research_opportunities.md`: distinguish paper-stated gaps from inferred ideas.

@@ -12,7 +12,7 @@
     },
     "note_format": {
       "type": ["string", "null"],
-      "description": "Detected Markdown note format, including legacy, v2, v3, phase2-skim-v1, phase3-deep-v1, or phase3-deep-v2."
+      "description": "Detected current Markdown note format. Current deep notes use phase3-deep-v2; non-current notes are reported as unknown."
     },
     "technical_route": { "type": ["string", "null"] },
     "why_hard": { "type": ["string", "null"] },

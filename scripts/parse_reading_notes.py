@@ -507,11 +507,7 @@ def parse_entry(batch_heading: str, title: str, body: str) -> dict:
     evidence = sorted(set(EVIDENCE_RE.findall(body)))
     numbers = [strip_markdown(item.group(0)) for item in NUMBER_RE.finditer(body)]
     note_format = detect_note_format(body)
-    general_missing = (
-        []
-        if note_format in {"phase2-skim-v1", "phase3-deep-v1", "phase3-deep-v2"}
-        else [key for key in ("research_problem", "core_idea", "method_details", "experiments", "limitations", "takeaway") if not fields.get(key)]
-    )
+    general_missing = [] if note_format == "phase3-deep-v2" else ["current note type phase3-deep-v2"]
     quality_missing_fields = format_missing_fields(body)
     missing_fields = unique([*general_missing, *quality_missing_fields])
     tagged = extract_tagged_blocks(body)
@@ -526,7 +522,7 @@ def parse_entry(batch_heading: str, title: str, body: str) -> dict:
     needs_review = bool(
         missing_fields
         or not arxiv_match
-        or (note_format not in {"phase2-skim-v1", "phase3-deep-v1", "phase3-deep-v2"} and (not evidence_references or not numbers))
+        or note_format != "phase3-deep-v2"
         or tagged["needs_review"]
     )
     return {
@@ -666,8 +662,8 @@ def parse_notes(path: Path) -> dict:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Parse structured Phase 2 reading notes into JSON.")
-    parser.add_argument("--notes", default="phase2_reading_notes.md")
+    parser = argparse.ArgumentParser(description="Parse current structured Phase 3 deep notes into JSON.")
+    parser.add_argument("--notes", required=True)
     parser.add_argument("--output", help="Optional JSON output path.")
     parser.add_argument("--allow-write", action="store_true")
     args = parser.parse_args()
