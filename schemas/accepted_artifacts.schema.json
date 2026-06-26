@@ -1,0 +1,113 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://codex.local/literature-research-workflow/accepted_artifacts.schema.json",
+  "title": "Accepted Literature Artifacts Registry",
+  "description": "Advisory contract for batches/accepted_artifacts.json. New projects should use structured v2 entries; legacy string/list registries remain readable.",
+  "oneOf": [
+    {
+      "type": "array",
+      "items": {
+        "oneOf": [
+          {
+            "type": "string"
+          },
+          {
+            "$ref": "#/$defs/artifactEntry"
+          }
+        ]
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "version": {
+          "type": ["integer", "string"]
+        },
+        "artifacts": {
+          "type": "array",
+          "items": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "$ref": "#/$defs/artifactEntry"
+              }
+            ]
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "artifactEntry": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["type", "path"],
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": ["note", "overview", "candidate_table", "final_report", "failure", "other"]
+        },
+        "artifact_type": {
+          "type": "string"
+        },
+        "path": {
+          "type": "string",
+          "minLength": 1
+        },
+        "batch": {
+          "type": "string"
+        },
+        "artifact_label": {
+          "type": "string"
+        },
+        "micro_batch": {
+          "type": "string"
+        },
+        "paper_ids": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "content_hash": {
+          "type": "string"
+        },
+        "review_status": {
+          "type": "string",
+          "enum": ["clean", "accepted", "accepted_with_warnings", "warning", "failed", "unknown"]
+        },
+        "warning_codes": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "source_candidate_table": {
+          "type": "string"
+        },
+        "source_deep_manifest": {
+          "type": "string"
+        },
+        "quality_status": {
+          "type": "string",
+          "enum": ["accepted", "warning", "failed", "superseded", "unknown"]
+        },
+        "registered_at": {
+          "type": "string"
+        },
+        "supersedes": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "notes": {
+          "type": "string"
+        }
+      }
+    }
+  }
+}

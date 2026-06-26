@@ -1,0 +1,115 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://codex.local/literature-research-workflow/evidence_packet_manifest.schema.json",
+  "title": "Evidence Packet Manifest",
+  "description": "Advisory contract for Phase 2 evidence packet manifests. Supports template-v2 paper_id packet manifests and legacy arxiv_id packet manifests.",
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["batch", "packets"],
+  "properties": {
+    "schema_version": {
+      "type": "string"
+    },
+    "version": {
+      "type": "integer"
+    },
+    "batch": {
+      "type": "string"
+    },
+    "micro_batch_size": {
+      "type": "integer"
+    },
+    "max_packet_chars": {
+      "type": "integer"
+    },
+    "packet_count": {
+      "type": "integer"
+    },
+    "packets": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": true,
+        "required": ["packet_path", "status"],
+        "properties": {
+          "schema_version": {
+            "type": "string"
+          },
+          "paper_id": {
+            "type": "string"
+          },
+          "packet_id": {
+            "type": "string"
+          },
+          "micro_batch": {
+            "type": "string"
+          },
+          "arxiv_id": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "batch": {
+            "type": "string"
+          },
+          "packet_path": {
+            "type": "string"
+          },
+          "section_hint": {
+            "type": "string"
+          },
+          "char_range": {
+            "type": "string"
+          },
+          "source_body_path": {
+            "type": "string"
+          },
+          "body_text_path": {
+            "type": "string"
+          },
+          "packet_chars": {
+            "type": "integer"
+          },
+          "body_chars": {
+            "type": "integer"
+          },
+          "truncated": {
+            "type": "boolean"
+          },
+          "quality_path": {
+            "type": "string"
+          },
+          "quality_status": {
+            "type": "string"
+          },
+          "warnings": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "selected_sections": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": true,
+              "properties": {
+                "name": { "type": "string" },
+                "heading": { "type": "string" },
+                "chars": { "type": "integer" },
+                "partial": { "type": "boolean" }
+              }
+            }
+          },
+          "created_at": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  }
+}

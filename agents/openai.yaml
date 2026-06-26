@@ -1,0 +1,4 @@
+interface:
+  display_name: "Literature Research Workflow"
+  short_description: "Plan skim reading and selected deep dives"
+  default_prompt: "Use $literature-research-workflow to organize a traceable three-stage literature workflow with skim notes, candidate review, and selected deep reading."

@@ -1,0 +1,27 @@
+# Python cache
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Node / build cache
+node_modules/
+dist/
+build/
+
+# Environment / secrets
+.env
+.env.*
+*.key
+*.pem
+credentials.json
+token.json
+
+# OS / editor
+.DS_Store
+Thumbs.db
+
+# Logs / packaged artifacts
+*.log
+*.zip

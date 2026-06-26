@@ -1,0 +1,377 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://codex.local/literature-research-workflow/paper_note.schema.json",
+  "title": "Structured Paper Note",
+  "description": "Advisory contract for future paper_notes/*.json files. It separates paper-stated facts, interpretations, and possible research ideas without requiring every field to be complete.",
+  "type": "object",
+  "additionalProperties": true,
+  "properties": {
+    "arxiv_id": {
+      "type": ["string", "null"],
+      "description": "arXiv ID when known."
+    },
+    "note_format": {
+      "type": ["string", "null"],
+      "description": "Detected Markdown note format, including legacy, v2, v3, phase2-skim-v1, phase3-deep-v1, or phase3-deep-v2."
+    },
+    "technical_route": { "type": ["string", "null"] },
+    "why_hard": { "type": ["string", "null"] },
+    "one_sentence_method": { "type": ["string", "null"] },
+    "intuitive_view": { "type": ["string", "null"] },
+    "prior_or_baseline": { "type": ["string", "null"] },
+    "essential_change": { "type": ["string", "null"] },
+    "recurring_weakness": { "type": ["string", "null"] },
+    "diagram_type": {
+      "type": ["string", "null"],
+      "enum": ["inference / reasoning pipeline", "training / post-training", "architecture / system", "objective / optimization / theory", "benchmark / dataset", "", null]
+    },
+    "baseline_components": {
+      "type": ["array", "string", "null"],
+      "items": { "type": "string" }
+    },
+    "changed_component": { "type": ["string", "null"] },
+    "ours_components": {
+      "type": ["array", "string", "null"],
+      "items": { "type": "string" }
+    },
+    "diagram_verification": {
+      "type": ["string", "null"],
+      "enum": ["verified", "needs review", "needs verification", "", null]
+    },
+    "diagram_evidence_location": { "type": ["string", "null"] },
+    "prior_choice_rationale": { "type": ["string", "null"] },
+    "evidence_strength": { "type": ["string", "null"] },
+    "deep_read_recommendation": { "type": ["string", "null"] },
+    "recommendation_reason": { "type": ["string", "null"] },
+    "appendix_checked": { "type": ["string", "null"] },
+    "appendix_not_applicable_reason": { "type": ["string", "null"] },
+    "appendix_sections_checked": { "type": ["string", "null"] },
+    "claim_evidence_risks": {
+      "type": ["array", "null"],
+      "items": {
+        "type": "object",
+        "additionalProperties": true
+      }
+    },
+    "minimal_reproduction_path": { "type": ["string", "null"] },
+    "core_contribution": { "type": ["string", "null"] },
+    "main_caution": { "type": ["string", "null"] },
+    "reading_decision": { "type": ["string", "null"] },
+    "initial_reading_decision": { "type": ["string", "null"] },
+    "final_reading_decision": { "type": ["string", "null"] },
+    "deep_method_comparison": {
+      "type": ["array", "null"],
+      "items": {
+        "type": "object",
+        "additionalProperties": true,
+        "properties": {
+          "aspect": { "type": ["string", "null"] },
+          "direct_baseline": { "type": ["string", "null"] },
+          "representative_prior": { "type": ["string", "null"] },
+          "this_paper": { "type": ["string", "null"] }
+        }
+      }
+    },
+    "optimization_curriculum": { "type": ["string", "null"] },
+    "inference_procedure": { "type": ["string", "null"] },
+    "assumptions": { "type": ["string", "null"] },
+    "computation_cost": { "type": ["string", "null"] },
+    "main_supporting_evidence": { "type": ["string", "null"] },
+    "bounding_evidence": { "type": ["string", "null"] },
+    "judgment_changing_appendix_findings": { "type": ["string", "null"] },
+    "reproduction_dataset_details": { "type": ["string", "null"] },
+    "reproduction_hyperparameters": { "type": ["string", "null"] },
+    "follow_up_experiments": { "type": ["string", "null"] },
+    "main_reproduction_risk": { "type": ["string", "null"] },
+    "what_is_solid": { "type": ["string", "null"] },
+    "what_is_suggestive": { "type": ["string", "null"] },
+    "what_is_task_specific": { "type": ["string", "null"] },
+    "what_may_fail_when_scaling": { "type": ["string", "null"] },
+    "best_follow_up": { "type": ["string", "null"] },
+    "follow_up_experiment": { "type": ["string", "null"] },
+    "title": {
+      "type": ["string", "null"],
+      "description": "Paper title."
+    },
+    "version": {
+      "type": ["string", "null"],
+      "description": "arXiv version or paper version read."
+    },
+    "source_pdf": {
+      "type": ["string", "null"],
+      "description": "Path to source PDF used for reading."
+    },
+    "body_text_path": {
+      "type": ["string", "null"],
+      "description": "Path to extracted main-body text used for reading."
+    },
+    "problem": {
+      "type": ["string", "null"],
+      "description": "Research problem addressed by the paper."
+    },
+    "problem_statement": {
+      "type": ["string", "null"]
+    },
+    "essential_question": {
+      "type": ["string", "null"]
+    },
+    "mathematical_view": {
+      "type": ["string", "null"]
+    },
+    "frontier_position": {
+      "type": ["string", "null"]
+    },
+    "applications_and_potential": {
+      "type": ["string", "null"]
+    },
+    "prior_method_gap": {
+      "type": ["string", "null"],
+      "description": "Gap or limitation in prior methods as stated or implied by the paper."
+    },
+    "core_intuition": {
+      "type": ["string", "null"],
+      "description": "Core idea or intuition."
+    },
+    "prior_method_comparisons": {
+      "type": ["array", "null"],
+      "items": {
+        "type": "object",
+        "additionalProperties": true,
+        "properties": {
+          "existing_approach": {
+            "type": ["string", "null"]
+          },
+          "what_it_achieves": {
+            "type": ["string", "null"]
+          },
+          "limitation": {
+            "type": ["string", "null"]
+          }
+        }
+      }
+    },
+    "innovation_over_prior_work": {
+      "type": ["string", "null"]
+    },
+    "remaining_unresolved_aspects": {
+      "type": ["string", "null"]
+    },
+    "motivation": {
+      "type": ["string", "null"]
+    },
+    "why_this_direction_may_work": {
+      "type": ["string", "null"]
+    },
+    "method_preview": {
+      "type": ["string", "null"]
+    },
+    "prerequisites": {
+      "type": ["string", "array", "null"],
+      "items": {
+        "type": "string"
+      },
+      "description": "Prerequisite concepts, assumptions, or setup."
+    },
+    "method_flow": {
+      "type": ["string", "array", "null"],
+      "items": {
+        "type": "string"
+      },
+      "description": "High-level method flow."
+    },
+    "problem_formulation": {
+      "type": ["string", "null"],
+      "description": "Formal or semi-formal problem setup derived from the Markdown note."
+    },
+    "objective": {
+      "type": ["string", "null"],
+      "description": "Training, adaptation, or optimization objective when stated."
+    },
+    "optimization": {
+      "type": ["string", "null"],
+      "description": "Optimization procedure or update rule when stated."
+    },
+    "inference_flow": {
+      "type": ["string", "null"],
+      "description": "Inference-time or deployment-time flow when relevant."
+    },
+    "technical_details": {
+      "type": ["string", "array", "null"],
+      "items": {
+        "type": ["string", "object"],
+        "additionalProperties": true
+      },
+      "description": "Important implementation, objective, optimization, or theoretical details."
+    },
+    "experiments": {
+      "type": ["array", "null"],
+      "description": "Experiment descriptions.",
+      "items": {
+        "type": "object",
+        "additionalProperties": true,
+        "properties": {
+          "setup": {
+            "type": ["string", "null"]
+          },
+          "models": {
+            "type": ["array", "string", "null"],
+            "items": {
+              "type": "string"
+            }
+          },
+          "datasets": {
+            "type": ["array", "string", "null"],
+            "items": {
+              "type": "string"
+            }
+          },
+          "baselines": {
+            "type": ["array", "string", "null"],
+            "items": {
+              "type": "string"
+            }
+          },
+          "metrics": {
+            "type": ["array", "string", "null"],
+            "items": {
+              "type": "string"
+            }
+          },
+          "evidence_references": {
+            "$ref": "#/$defs/evidenceReferences"
+          }
+        }
+      }
+    },
+    "datasets": {
+      "type": ["array", "string", "null"],
+      "items": {
+        "type": "string"
+      }
+    },
+    "baselines": {
+      "type": ["array", "string", "null"],
+      "items": {
+        "type": "string"
+      }
+    },
+    "metrics": {
+      "type": ["array", "string", "null"],
+      "items": {
+        "type": "string"
+      }
+    },
+    "key_results": {
+      "type": ["array", "null"],
+      "description": "Key results, ideally with numeric values and evidence.",
+      "items": {
+        "type": "object",
+        "additionalProperties": true,
+        "properties": {
+          "claim": {
+            "type": ["string", "null"]
+          },
+          "value": {
+            "type": ["string", "number", "null"]
+          },
+          "evidence_references": {
+            "$ref": "#/$defs/evidenceReferences"
+          }
+        }
+      }
+    },
+    "evidence_references": {
+      "$ref": "#/$defs/evidenceReferences"
+    },
+    "limitations": {
+      "type": ["array", "null"],
+      "items": {
+        "type": "object",
+        "additionalProperties": true,
+        "properties": {
+          "limitation": {
+            "type": ["string", "null"]
+          },
+          "evidence_references": {
+            "$ref": "#/$defs/evidenceReferences"
+          }
+        }
+      }
+    },
+    "relation_to_user_research": {
+      "type": ["string", "null"]
+    },
+    "one_sentence_takeaway": {
+      "type": ["string", "null"]
+    },
+    "paper_stated_facts": {
+      "type": ["array", "null"],
+      "items": {
+        "type": ["string", "object"],
+        "additionalProperties": true
+      }
+    },
+    "interpretations": {
+      "type": ["array", "null"],
+      "items": {
+        "type": ["string", "object"],
+        "additionalProperties": true
+      }
+    },
+    "possible_research_ideas": {
+      "type": ["array", "null"],
+      "items": {
+        "type": ["string", "object"],
+        "additionalProperties": true
+      }
+    },
+    "verification_experiments": {
+      "type": ["array", "null"],
+      "items": {
+        "type": ["string", "object"],
+        "additionalProperties": true
+      },
+      "description": "Experiments proposed to verify possible research ideas."
+    },
+    "research_idea_risks": {
+      "type": ["array", "null"],
+      "items": {
+        "type": ["string", "object"],
+        "additionalProperties": true
+      },
+      "description": "Main risks or failure modes for possible research ideas."
+    },
+    "confidence": {
+      "type": ["string", "null"],
+      "enum": ["high", "medium", "low", "unknown", "", null]
+    },
+    "needs_review": {
+      "type": ["array", "null"],
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "$defs": {
+    "evidenceReferences": {
+      "description": "Section, table, figure, page, or equation references supporting an important claim.",
+      "type": ["array", "null"],
+      "items": {
+        "type": ["string", "object"],
+        "additionalProperties": true,
+        "properties": {
+          "type": {
+            "type": ["string", "null"],
+            "enum": ["section", "table", "figure", "page", "equation", "appendix", "other", null]
+          },
+          "reference": {
+            "type": ["string", "null"]
+          },
+          "quote_or_summary": {
+            "type": ["string", "null"]
+          }
+        }
+      }
+    }
+  }
+}

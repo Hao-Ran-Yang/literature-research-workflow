@@ -1,0 +1,92 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://codex.local/literature-research-workflow/runner_summary.schema.json",
+  "title": "Literature Workflow Runner Summary",
+  "description": "Advisory contract for scripts/literature_workflow.py JSON output. It is permissive and allows additional fields for backward compatibility.",
+  "type": "object",
+  "additionalProperties": true,
+  "required": [
+    "action",
+    "root",
+    "steps",
+    "planned_steps",
+    "warnings",
+    "errors",
+    "next_action",
+    "network_required",
+    "write_operations"
+  ],
+  "properties": {
+    "action": {
+      "description": "Resolved workflow action.",
+      "type": "string"
+    },
+    "root": {
+      "description": "Project root path.",
+      "type": "string"
+    },
+    "steps": {
+      "description": "Commands actually executed by the runner.",
+      "$ref": "#/$defs/stepList"
+    },
+    "planned_steps": {
+      "description": "Human-readable plan or dry-run step list.",
+      "$ref": "#/$defs/stepList"
+    },
+    "warnings": {
+      "description": "Non-fatal warnings.",
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "errors": {
+      "description": "Blocking errors or advisory validation errors.",
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "initial_state": {
+      "description": "Workflow state before execution when available.",
+      "type": ["object", "null"],
+      "additionalProperties": true
+    },
+    "final_state": {
+      "description": "Workflow state after execution or inspection when available.",
+      "type": ["object", "null"],
+      "additionalProperties": true
+    },
+    "next_action": {
+      "description": "Recommended next action from final_state or initial_state.",
+      "type": ["string", "null"]
+    },
+    "network_required": {
+      "description": "Whether this action would require network access.",
+      "type": "boolean"
+    },
+    "write_operations": {
+      "description": "Human-readable write operations planned or possible for this action.",
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "$defs": {
+    "stepList": {
+      "type": "array",
+      "items": {
+        "oneOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "object",
+            "additionalProperties": true
+          }
+        ]
+      }
+    }
+  }
+}

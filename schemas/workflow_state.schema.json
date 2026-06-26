@@ -1,0 +1,133 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://codex.local/literature-research-workflow/workflow_state.schema.json",
+  "title": "Literature Research Workflow State",
+  "description": "Advisory contract for the state of a literature-review-centered research workflow project. It is intentionally permissive so older projects can be inspected without migration; arXiv remains one supported source family.",
+  "type": "object",
+  "additionalProperties": true,
+  "properties": {
+    "project_type": {
+      "description": "Workflow family identifier when a persistent state file is introduced.",
+      "type": "string",
+      "enum": ["literature_research_workflow", "arxiv_literature_review"]
+    },
+    "phase": {
+      "description": "Coarse project phase.",
+      "type": "string",
+      "enum": ["phase0", "phase1", "phase2", "phase3", "final", "unknown"]
+    },
+    "workflow_mode": {
+      "description": "Detected compatibility mode.",
+      "type": "string",
+      "enum": ["three_stage", "legacy", "hybrid"]
+    },
+    "root": {
+      "description": "Project root path.",
+      "type": "string"
+    },
+    "inventory_path": {
+      "description": "Path to the inventory CSV, often phase1_inventory.csv or an older phase1*_inventory.csv name.",
+      "type": ["string", "null"]
+    },
+    "phase1_report_path": {
+      "description": "Path to the Phase 1 report.",
+      "type": ["string", "null"]
+    },
+    "notes_path": {
+      "description": "Path to appended Phase 2 reading notes.",
+      "type": ["string", "null"]
+    },
+    "raw_papers_dir": {
+      "description": "Directory containing original downloaded or manually supplied PDFs.",
+      "type": ["string", "null"]
+    },
+    "phase2_dir": {
+      "description": "Directory containing working PDFs, manifests, status files, and extracted body text.",
+      "type": ["string", "null"]
+    },
+    "current_batch": {
+      "description": "Current target batch, if any.",
+      "type": ["string", "null"],
+      "pattern": "^B[0-9]{2,}$"
+    },
+    "completed_batches": {
+      "description": "Batch codes considered complete.",
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^B[0-9]{2,}$"
+      }
+    },
+    "batch_status": {
+      "description": "Loose per-batch status map for persistent state files.",
+      "type": "object",
+      "additionalProperties": true
+    },
+    "counts": {
+      "description": "Loose count summaries such as sections, method categories, priorities, and batch sizes.",
+      "type": "object",
+      "additionalProperties": true
+    },
+    "last_successful_step": {
+      "description": "Human-readable name of the last completed workflow step.",
+      "type": ["string", "null"]
+    },
+    "next_recommended_action": {
+      "description": "Human-readable recommended next action.",
+      "type": ["string", "null"]
+    },
+    "next_action": {
+      "description": "Current runner/check_workflow_state next action field.",
+      "type": ["string", "null"]
+    },
+    "network_policy": {
+      "description": "Project-level network policy.",
+      "type": "string",
+      "enum": ["ask_each_time", "allowed", "disabled", "unknown"]
+    },
+    "accepted_failures": {
+      "description": "Explicitly accepted per-paper or per-batch failures.",
+      "type": "array",
+      "items": {
+        "type": ["string", "object"],
+        "additionalProperties": true
+      }
+    },
+    "warnings": {
+      "description": "Non-blocking state warnings.",
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "updated_at": {
+      "description": "Timestamp string. Format is intentionally not enforced yet.",
+      "type": ["string", "null"]
+    },
+    "phase1": {
+      "description": "Current check_workflow_state Phase 1 summary.",
+      "type": "object",
+      "additionalProperties": true
+    },
+    "phase2": {
+      "description": "Skim-reading or legacy Phase 2 summary.",
+      "type": "object",
+      "additionalProperties": true
+    },
+    "phase3": {
+      "description": "Optional selected deep-reading summary.",
+      "type": "object",
+      "additionalProperties": true
+    },
+    "batches": {
+      "description": "Current check_workflow_state batch summary map.",
+      "type": "object",
+      "additionalProperties": true
+    },
+    "final_synthesis": {
+      "description": "Current check_workflow_state final synthesis summary.",
+      "type": "object",
+      "additionalProperties": true
+    }
+  }
+}

@@ -1,0 +1,60 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://codex.local/literature-research-workflow/skim_note.schema.json",
+  "title": "Phase 2 Skim Note",
+  "description": "Advisory derived-JSON contract for compact packet-only Phase 2 skim notes. Markdown remains the default note format.",
+  "type": "object",
+  "additionalProperties": true,
+  "properties": {
+    "paper_id": { "type": ["string", "null"] },
+    "arxiv_id": { "type": ["string", "null"] },
+    "title": { "type": ["string", "null"] },
+    "source_packet": { "type": ["string", "null"] },
+    "skim_status": { "type": ["string", "null"] },
+    "technical_route": { "type": ["string", "null"] },
+    "problem": { "type": ["string", "null"] },
+    "why_hard": { "type": ["string", "null"] },
+    "motivation": { "type": ["string", "null"] },
+    "method_rationale": { "type": ["string", "null"] },
+    "why_existing_methods_are_not_enough": { "type": ["string", "null"] },
+    "inferred_rationale": { "type": ["string", "null"] },
+    "core_method": { "type": ["string", "null"] },
+    "one_sentence_method": { "type": ["string", "null"] },
+    "intuitive_view": { "type": ["string", "null"] },
+    "key_changed_step": { "type": ["string", "null"] },
+    "method_comparison_diagram": { "type": ["string", "null"] },
+    "evidence_available": { "type": ["string", "null"] },
+    "uncertainty": { "type": ["string", "null"] },
+    "evidence_pointers": {
+      "type": ["array", "string", "null"],
+      "items": { "type": "string" }
+    },
+    "legacy_fields": {
+      "type": ["object", "null"],
+      "additionalProperties": true
+    },
+    "mathematical_view": { "type": ["string", "null"] },
+    "prior_or_baseline": { "type": ["string", "null"] },
+    "essential_change": { "type": ["string", "null"] },
+    "diagram_type": {
+      "type": ["string", "null"],
+      "enum": ["inference / reasoning pipeline", "training / post-training", "architecture / system", "objective / optimization / theory", "benchmark / dataset", "", null]
+    },
+    "baseline_components": {
+      "type": ["array", "string", "null"],
+      "items": { "type": "string" }
+    },
+    "changed_component": { "type": ["string", "null"] },
+    "ours_components": {
+      "type": ["array", "string", "null"],
+      "items": { "type": "string" }
+    },
+    "diagram_verification": {
+      "type": ["string", "null"],
+      "enum": ["verified", "needs review", "needs verification", "", null]
+    },
+    "evidence_strength": { "type": ["string", "null"] },
+    "deep_read_recommendation": { "type": ["string", "null"] },
+    "recommendation_reason": { "type": ["string", "null"] }
+  }
+}

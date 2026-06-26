@@ -1,0 +1,84 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://codex.local/literature-research-workflow/inventory.schema.json",
+  "title": "Phase 1 Inventory Row",
+  "description": "Advisory row-level contract for phase1_inventory.csv. Missing or uncertain metadata should be left blank, null, or marked in notes rather than fabricated.",
+  "type": "object",
+  "additionalProperties": true,
+  "properties": {
+    "section": {
+      "description": "Source section or high-level domain bucket.",
+      "type": ["string", "null"]
+    },
+    "method_category": {
+      "description": "First-pass method family.",
+      "type": ["string", "null"]
+    },
+    "application_tag": {
+      "description": "Task, application, benchmark, or domain tag.",
+      "type": ["string", "null"]
+    },
+    "reading_batch": {
+      "description": "Assigned reading batch. Prefer B01, B02, ... when known.",
+      "type": ["string", "null"],
+      "pattern": "^(|B[0-9]{2,}.*)$"
+    },
+    "arxiv_id": {
+      "description": "Normalized arXiv ID. May be blank or uncertain when not verified.",
+      "type": ["string", "null"],
+      "pattern": "^(|[0-9]{4}\\.[0-9]{4,5}(v[0-9]+)?|[a-zA-Z.-]+/[0-9]{7}(v[0-9]+)?|.*uncertain.*)$"
+    },
+    "title": {
+      "description": "Paper title.",
+      "type": ["string", "null"]
+    },
+    "authors": {
+      "description": "Author string when available.",
+      "type": ["string", "null"]
+    },
+    "first_submitted": {
+      "description": "First arXiv submission date when available.",
+      "type": ["string", "null"]
+    },
+    "latest_version_date": {
+      "description": "Latest arXiv version date when available.",
+      "type": ["string", "null"]
+    },
+    "abs_url": {
+      "description": "arXiv abstract URL.",
+      "type": ["string", "null"]
+    },
+    "pdf_url": {
+      "description": "PDF URL.",
+      "type": ["string", "null"]
+    },
+    "source_url": {
+      "description": "Original source webpage or local source reference.",
+      "type": ["string", "null"]
+    },
+    "notes": {
+      "description": "Uncertainty, duplicate relation, non-arXiv status, or manual verification need.",
+      "type": ["string", "null"]
+    },
+    "reading_priority": {
+      "description": "Optional reading priority label.",
+      "type": ["string", "null"]
+    },
+    "classification_confidence": {
+      "description": "Optional classification confidence. May be label or numeric.",
+      "oneOf": [
+        {
+          "type": ["string", "null"],
+          "enum": ["high", "medium", "low", "unknown", "", null]
+        },
+        {
+          "type": "number"
+        }
+      ]
+    },
+    "classification_source": {
+      "description": "How the classification was produced, such as source heading, rules, or manual review.",
+      "type": ["string", "null"]
+    }
+  }
+}
