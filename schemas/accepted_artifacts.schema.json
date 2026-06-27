@@ -67,10 +67,6 @@
         "source_deep_manifest": {
           "type": "string"
         },
-        "quality_status": {
-          "type": "string",
-          "enum": ["accepted", "warning", "failed", "superseded", "unknown"]
-        },
         "status": {
           "type": "string",
           "enum": ["active", "superseded", "archived"]

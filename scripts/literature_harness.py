@@ -17,7 +17,7 @@ ACTIVE_ACCEPTED_ROOTS = [
     Path("reports") / "accepted_overviews",
     Path("candidates") / "accepted",
 ]
-LEGACY_ACCEPTED_FILES = [
+UNSUPPORTED_ROOT_WORKFLOW_FILES = [
     Path("phase2_skim_notes.md"),
     Path("phase2_skim_overview.md"),
     Path("phase2_deep_reading_candidates.csv"),
@@ -49,7 +49,7 @@ ROOT_ALLOWED_FILES = {
     "scope.md",
     "source_links.md",
 }
-LEGACY_FLAT_FILES = set(path.as_posix() for path in LEGACY_ACCEPTED_FILES) | {"phase1_inventory.csv", "phase1_report.md"}
+UNSUPPORTED_ROOT_FILE_NAMES = set(path.as_posix() for path in UNSUPPORTED_ROOT_WORKFLOW_FILES) | {"phase1_inventory.csv", "phase1_report.md"}
 LARGE_TABLE_BYTES = 200_000
 
 
@@ -140,7 +140,6 @@ def validate_registry(root: Path) -> dict:
             "path": rel,
             "status": status,
             "exists": False,
-            "legacy": bool(entry.get("_legacy")),
         }
         if not rel:
             errors.append(f"registry entry #{entry.get('_index')} has an empty path")
@@ -153,7 +152,7 @@ def validate_registry(root: Path) -> dict:
             if "archive" in Path(rel).parts and status == "active":
                 warnings.append(f"active registry entry points into archive: {rel}")
             is_phase1_report = entry.get("artifact_type") == "phase1_report" or str(rel).startswith("reports/accepted_overviews/phase1_report_")
-            if not item["legacy"] and item["type"] in {"note", "overview", "candidate_table"} and not is_phase1_report and not entry.get("batch"):
+            if item["type"] in {"note", "overview", "candidate_table"} and not is_phase1_report and not entry.get("batch"):
                 errors.append(f"registry entry #{entry.get('_index')} type {item['type']} requires batch")
             if status == "active":
                 previous = active_paths.get(rel)
@@ -217,11 +216,11 @@ def check_root_clean(root: Path) -> dict:
     superseded = registry_paths_by_status(registry, "superseded")
     registered = accepted | superseded
     active_files = scan_files(root, ACTIVE_ACCEPTED_ROOTS)
-    legacy_files = [path.as_posix() for path in LEGACY_ACCEPTED_FILES if (root / path).exists()]
+    unsupported_root_workflow_files = [path.as_posix() for path in UNSUPPORTED_ROOT_WORKFLOW_FILES if (root / path).exists()]
     unregistered = [path for path in active_files if path not in accepted and path not in superseded]
     orphan_tmp = []
     root_unexpected_files = []
-    root_legacy_files = []
+    unsupported_root_files = []
     extensionless_tmp_files = []
     archive_references = []
     for path in sorted(root.rglob("*")):
@@ -232,9 +231,9 @@ def check_root_clean(root: Path) -> dict:
         if TMP_RE.search(path.name) and not (set(rel.parts) & ARCHIVE_PARTS):
             orphan_tmp.append(rel_text)
         if len(rel.parts) == 1:
-            if rel_text in LEGACY_FLAT_FILES:
+            if rel_text in UNSUPPORTED_ROOT_FILE_NAMES:
                 if rel_text not in registered:
-                    root_legacy_files.append(rel_text)
+                    unsupported_root_files.append(rel_text)
             elif path.suffix.lower() in {".md", ".csv"} and rel_text not in ROOT_ALLOWED_FILES:
                 root_unexpected_files.append(rel_text)
             elif not path.suffix and path.name.lower() not in {".gitignore", "license", "copying"}:
@@ -248,19 +247,19 @@ def check_root_clean(root: Path) -> dict:
         warnings.append("temporary or stub files are present")
     if root_unexpected_files:
         warnings.append("unexpected root-level Markdown/CSV files are present")
-    if root_legacy_files:
-        warnings.append("legacy flat workflow files are present at project root")
+    if unsupported_root_files:
+        warnings.append("unsupported root workflow files are present at project root")
     if extensionless_tmp_files:
         warnings.append("extensionless root-level temporary-looking files are present")
     return {
         "root": str(root),
         "registry": registry,
         "active_files": active_files,
-        "legacy_files": legacy_files,
+        "unsupported_root_workflow_files": unsupported_root_workflow_files,
         "unregistered_accepted_files": unregistered,
         "orphan_tmp_files": orphan_tmp,
         "root_unexpected_files": root_unexpected_files,
-        "root_legacy_files": root_legacy_files,
+        "unsupported_root_files": unsupported_root_files,
         "extensionless_tmp_files": extensionless_tmp_files,
         "archive_references": archive_references,
         "warnings": warnings,
@@ -320,9 +319,9 @@ def resolve_representative_candidates(root: Path, requested: str) -> tuple[Path,
     requested_path = project_path(root, requested)
     if requested_path.exists():
         return requested_path, requested
-    legacy = root / "inventory" / "phase2a_representative_candidates.csv"
-    if legacy.exists():
-        return legacy, "inventory/phase2a_representative_candidates.csv"
+    alternate = root / "inventory" / "phase2a_representative_candidates.csv"
+    if alternate.exists():
+        return alternate, "inventory/phase2a_representative_candidates.csv"
     return requested_path, requested
 
 
@@ -337,8 +336,8 @@ def check_representative_candidates(root: Path, requested: str) -> dict:
     with path.open("r", encoding="utf-8-sig", newline="") as handle:
         reader = csv.DictReader(handle)
         fields = reader.fieldnames or []
-        legacy_fields = {"item_name", "verified_title", "arxiv_id", "canonical_url"}
-        required_fields = REPRESENTATIVE_FIELDS if not legacy_fields.intersection(fields) else [
+        alternate_fields = {"item_name", "verified_title", "arxiv_id", "canonical_url"}
+        required_fields = REPRESENTATIVE_FIELDS if not alternate_fields.intersection(fields) else [
             "dedup_key",
             "source_type",
             "selection_role",
@@ -597,6 +596,9 @@ def register_artifact(args, root: Path) -> dict:
     warnings = []
     errors = []
     rel = (args.artifact_path or "").strip().replace("\\", "/")
+    lifecycle = getattr(args, "status", "") or "active"
+    review_input = getattr(args, "review_status", "") or getattr(args, "quality_status", "accepted")
+    review_status = "clean" if review_input in {"accepted", "unknown", "superseded"} else review_input
     if args.artifact_type in {"note", "overview", "candidate_table", "phase3_deep_note"} and not args.batch:
         errors.append(f"{args.artifact_type} artifacts require --batch")
     if not is_project_relative(rel):
@@ -604,7 +606,7 @@ def register_artifact(args, root: Path) -> dict:
     path = project_path(root, rel)
     if rel and not path.exists():
         errors.append(f"artifact path does not exist: {rel}")
-    if rel and "archive" in Path(rel).parts and args.quality_status != "superseded":
+    if rel and "archive" in Path(rel).parts and lifecycle != "superseded":
         errors.append(f"active artifact path must not point into archive: {rel}")
 
     registry_data, artifacts, load_warnings, load_errors = load_registry_for_write(root)
@@ -641,13 +643,12 @@ def register_artifact(args, root: Path) -> dict:
             note = f"Superseded by {rel}"
             entry["notes"] = f"{entry['notes']}; {note}" if entry["notes"] else note
 
-    requested_status = "superseded" if args.quality_status == "superseded" else "active"
     new_entry = {
         "artifact_type": args.artifact_type,
         "type": args.artifact_type,
         "path": rel,
-        "status": requested_status,
-        "review_status": "clean" if args.quality_status in {"accepted", "unknown"} else args.quality_status,
+        "status": lifecycle,
+        "review_status": review_status,
         "registered_at": datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z"),
     }
     if path.exists() and path.is_file():
@@ -816,9 +817,9 @@ def status(root: Path) -> dict:
         else:
             effective = "registry_available"
             next_gate = "use registered accepted artifacts; inspect warnings before synthesis" if registry["warnings"] else "ready for registered artifact workflow"
-    elif clean["legacy_files"]:
-        effective = "legacy_files_available"
-        next_gate = "legacy project: keep read-preserve behavior and consider migration-plan before strict registry use"
+    elif clean["unsupported_root_workflow_files"]:
+        effective = "unsupported_root_files_present"
+        next_gate = "archive or remove unsupported root workflow files before relying on registry checks"
     else:
         effective = "no_accepted_registry"
         next_gate = "run phase workflow or initialize accepted artifact registry for new template projects"
@@ -827,7 +828,7 @@ def status(root: Path) -> dict:
         "registry": registry,
         "filesystem_facts": {
             "active_accepted_files": clean["active_files"],
-            "legacy_files": clean["legacy_files"],
+            "unsupported_root_workflow_files": clean["unsupported_root_workflow_files"],
         },
         "cache_receipts": [str(path.relative_to(root)) for path in cache_paths],
         "effective_status": effective,
@@ -873,7 +874,8 @@ def main() -> None:
     parser.add_argument("--plan-only", action="store_true")
     parser.add_argument("--artifact-type", default="note", choices=["note", "phase3_deep_note", "overview", "candidate_table", "final_report", "failure", "other"])
     parser.add_argument("--artifact-path", default="")
-    parser.add_argument("--quality-status", default="accepted", choices=["accepted", "warning", "failed", "superseded", "unknown"])
+    parser.add_argument("--status", default="active", choices=["active", "superseded", "archived"], help="Artifact lifecycle status for register-artifact.")
+    parser.add_argument("--review-status", default="accepted", choices=["accepted", "warning", "failed", "unknown"], help="Review outcome metadata for register-artifact.")
     parser.add_argument("--artifact-label", default="")
     parser.add_argument("--micro-batch", default="")
     parser.add_argument("--supersedes", nargs="*", default=[])

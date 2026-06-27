@@ -107,11 +107,11 @@ python scripts/literature_workflow.py --root . --action accept-draft --draft not
 
 When `run-next-microbatch` returns `status: ready`, do not stop after reporting only readiness. Execute the generated task, update the batch draft, and rerun `run-next-microbatch` until it returns `blocked`, `draft_complete`, or `complete`; run `accept-draft` after `draft_complete`.
 
-Write the current batch overview and candidate table after ccept-draft or with the explicit overview action when recovering a current batch:
+Write the current batch overview and candidate table after `accept-draft` or with the explicit overview action when recovering a current batch:
 
-`ash
+```bash
 python scripts/literature_workflow.py --root . --action phase2-overview --batch Bxx --allow-write
-` 
+```
 
 ## Phase 3 Selected Deep Reading
 
@@ -198,7 +198,7 @@ python scripts/literature_workflow.py --action check-node
 
 Use `LITFLOW_NODE` or `--node-command` when Node is not discoverable.
 
-## Compatibility
+## Current Aliases
 
-- Bare --batch B03 still maps to prepare-batch.
-- --phase phase1 and --phase final remain available.
+- Bare `--batch B03` maps to `prepare-batch`.
+- `--phase phase1` and `--phase final` remain available as current shorthand aliases.

@@ -1,5 +1,15 @@
 # Literature Research Workflow Specification
 
+## Quick Contract
+
+Current projects are template-v2 only. `batches/accepted_artifacts.json` is the accepted-artifact source of truth; artifact lifecycle is `status = active | superseded | archived`; Final synthesis reads active registry artifacts only; Phase 2 writing is packet-only through `run-next-microbatch` and `accept-draft`; Phase 3 starts with `promote-to-deep`; `validate-project` is strict for active current artifacts and ignores archived or superseded artifacts.
+
+## How To Read This Spec
+
+- Routine operation: read `Overview`, `Core Rules`, `Template-v2 Standard Layout`, `Default Current Workflow`, and the phase section you are about to run.
+- Detailed note rules: read `Method Diagram Policy`, `Phase 2 Skim Note Quality`, and `Phase 3 Deep Note Quality` only when generating or validating notes.
+- Recovery/debug: read registry, root-clean, context-budget, and packaging details only when a check fails or a project needs cleanup.
+
 ## Overview
 
 This document is the detailed source of truth for the literature-review-centered research workflow. arXiv is one supported source family alongside OpenReview, ACL Anthology, PMLR, NeurIPS pages, official PDFs, local PDFs, and curated inventories.
@@ -8,7 +18,7 @@ Default flow:
 
 ```text
 Phase 1 inventory/taxonomy/batches
--> Phase 2 skim notes for each paper
+-> Phase 2 packet-only batch skim notes
 -> batch-level overview
 -> reading-priority candidate table
 -> user reads selected papers manually and takes personal notes outside this skill
@@ -335,7 +345,7 @@ TODO or placeholder content
 
 Warnings/review flags include dense non-bulleted cross-paper comparison, generic motivation, historical recommendation fields, or other semantic-quality concerns that are useful for review but should not initially block acceptance. Accepted registry entries may store lightweight `review_status` and `warning_codes`; detailed checker output belongs in stdout or logs/reports.
 
-Low-level parsers may still be used manually for archival inspection, but historical note fields are not part of the current acceptance contract.
+Non-current notes are outside the normal workflow. Archive them separately or convert them manually before acceptance.
 
 The Motivation / Method Rationale requirements apply to newly generated skim notes and explicit quality checks. Do not batch-rewrite, migrate, or retroactively revalidate already accepted notes/artifacts solely because they predate this subsection.
 
@@ -343,7 +353,7 @@ The Motivation / Method Rationale requirements apply to newly generated skim not
 
 `Diagram type` and stricter structural diagram rules are checked when `scripts/check_notes_quality.py` is explicitly run. Current accepted drafts are still gated by `accept-draft`.
 
-Historical Phase 3 note checks are archival/debug helpers only and are not part of the current normal path.
+Phase 3 note checks apply to current `phase3-deep-v2` accepted artifacts in the normal path.
 
 For new `phase3-deep-v2`, require a short decision summary, a single full technical-mechanism explanation, decision-critical evidence, reproduction-critical details, a structured research judgment, tagged facts/interpretation/evidence, an annotated comparison diagram, a populated three-way comparison table, and a populated Claim-Evidence-Risk-Use row.
 
@@ -357,9 +367,9 @@ When `scripts/check_notes_quality.py` is explicitly run, also apply strict diagr
 4. Notes flag obvious long repeated method explanations.
 5. Potentially speculative diagram claims without `[Interpretation]` or `[Needs verification]` are reported for review.
 
-These strict checks are advisory. Parser, overview, candidate generation, and state detection retain compatibility behavior and do not retroactively block old notes.
+These strict checks are advisory outside acceptance, but active accepted artifacts must satisfy the current template-v2 contract.
 
-Historical note parsers may be used for archival inspection only. Current projects should keep accepted notes in canonical template-v2 form.
+Non-current notes are outside the normal workflow. Archive them separately or convert them manually before acceptance.
 
 ## State Detection
 

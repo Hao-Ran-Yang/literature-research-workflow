@@ -1,6 +1,6 @@
 CANONICAL_LIFECYCLE_STATUSES = {"active", "superseded", "archived"}
-LEGACY_ACTIVE_STATUSES = {"", "accepted", "warning", "unknown", "active"}
-LEGACY_INACTIVE_STATUSES = {"superseded", "archived"}
+QUALITY_ACTIVE_STATUSES = {"", "accepted", "warning", "unknown", "active"}
+QUALITY_INACTIVE_STATUSES = {"superseded", "archived"}
 
 
 def lifecycle_status(entry: dict) -> str:
@@ -8,16 +8,16 @@ def lifecycle_status(entry: dict) -> str:
     raw_status = str(entry.get("status", "")).strip().lower()
     if raw_status in CANONICAL_LIFECYCLE_STATUSES:
         return raw_status
-    if raw_status in LEGACY_ACTIVE_STATUSES:
+    if raw_status in QUALITY_ACTIVE_STATUSES:
         return "active"
-    if raw_status in LEGACY_INACTIVE_STATUSES:
+    if raw_status in QUALITY_INACTIVE_STATUSES:
         return raw_status
 
-    legacy_quality = str(entry.get("quality_status", "")).strip().lower()
-    if legacy_quality in LEGACY_ACTIVE_STATUSES:
+    review_quality = str(entry.get("quality_status", "")).strip().lower()
+    if review_quality in QUALITY_ACTIVE_STATUSES:
         return "active"
-    if legacy_quality in LEGACY_INACTIVE_STATUSES:
-        return legacy_quality
+    if review_quality in QUALITY_INACTIVE_STATUSES:
+        return review_quality
     return "active"
 
 

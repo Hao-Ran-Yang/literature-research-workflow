@@ -66,7 +66,7 @@ class ValidateProjectCurrentOnlyTests(unittest.TestCase):
             scaffold_validation_files(root)
             note = root / "notes/accepted/B01.md"
             note.parent.mkdir(parents=True)
-            note.write_text("---\nartifact_type: batch_skim_note\nbatch: B01\npaper_ids:\n  - arxiv:2401.00001\n---\n## Legacy paper\nLegacy prose.\n", encoding="utf-8")
+            note.write_text("---\nartifact_type: batch_skim_note\nbatch: B01\npaper_ids:\n  - arxiv:2401.00001\n---\n## Non-current paper\nNon-current prose.\n", encoding="utf-8")
             digest = hashlib.sha256(note.read_bytes()).hexdigest()
             write_registry(root, [{
                 "type": "note", "artifact_type": "batch_skim_note", "path": "notes/accepted/B01.md",
@@ -85,7 +85,7 @@ class ValidateProjectCurrentOnlyTests(unittest.TestCase):
             scaffold_validation_files(root)
             note = root / "notes/accepted/B01.md"
             note.parent.mkdir(parents=True)
-            note.write_text("---\nartifact_type: batch_skim_note\nbatch: B01\npaper_ids:\n  - arxiv:2401.00001\n---\n## Legacy paper\nLegacy prose.\n", encoding="utf-8")
+            note.write_text("---\nartifact_type: batch_skim_note\nbatch: B01\npaper_ids:\n  - arxiv:2401.00001\n---\n## Non-current paper\nNon-current prose.\n", encoding="utf-8")
             digest = hashlib.sha256(note.read_bytes()).hexdigest()
             write_registry(root, [{
                 "type": "note", "artifact_type": "batch_skim_note", "path": "notes/accepted/B01.md",
@@ -211,8 +211,9 @@ class PackageIntegrityTests(unittest.TestCase):
             for required in ("scripts/", "schemas/", "docs/", "templates/", "tests/"):
                 self.assertTrue(any(name.startswith(required) for name in names), required)
             self.assertTrue(all("\\" not in name for name in names))
+            self.assertFalse(any(".git/" in name or name.startswith(".git/") for name in names))
             self.assertFalse(any("__pycache__" in name or name.endswith(".pyc") for name in names))
-            self.assertFalse(any(".pytest_cache" in name or name.endswith((".tmp", ".temp", "~")) for name in names))
+            self.assertFalse(any(".pytest_cache" in name or name.endswith((".tmp", ".temp", ".bak", "~")) for name in names))
             self.assertFalse(any(Path(name).name in {".DS_Store", "Thumbs.db"} for name in names))
 
 

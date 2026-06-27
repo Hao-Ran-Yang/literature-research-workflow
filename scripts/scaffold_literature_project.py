@@ -153,9 +153,9 @@ def main() -> None:
     parser.add_argument(
         "--phase1-only",
         action="store_true",
-        help="Compatibility flag; template-v2 scaffold is always created.",
+        help="Current alias; template-v2 scaffold is always created.",
     )
-    parser.add_argument("--template-v2", action="store_true", help="Compatibility flag; template-v2 is now the default.")
+    parser.add_argument("--template-v2", action="store_true", help="Current alias; template-v2 is now the default.")
     parser.add_argument("--vendor-workflow", action="store_true", help="Copy scripts, docs, schemas, and templates into the project.")
     parser.add_argument("--init-git", action="store_true", help="Explicitly run git init in the project root.")
     parser.add_argument("--allow-write", action="store_true")

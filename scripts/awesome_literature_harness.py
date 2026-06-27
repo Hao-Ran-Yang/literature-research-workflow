@@ -50,7 +50,7 @@ CANONICAL_SKIM_BLOCK_HEADINGS = [
 METHOD_COMPARISON_START = "<!-- method-comparison:start -->"
 METHOD_COMPARISON_END = "<!-- method-comparison:end -->"
 METHOD_COMPARISON_ROLES = ["Direct baseline", "Representative prior", "This paper", "KEY CHANGED STEP"]
-LEGACY_RECOMMENDATION_FIELD_RE = re.compile(
+HISTORICAL_RECOMMENDATION_FIELD_RE = re.compile(
     r"(?im)^\s*-\s*(?:Deep-read recommendation|Read priority|Deep-note candidate|Priority)\s*:"
 )
 CANONICAL_SKIM_NOTE_BLOCK = """### {paper_id} - {title}
@@ -2101,8 +2101,8 @@ def cross_paper_comparison_warning_codes(body: str) -> list[str]:
 
 def note_warning_codes(body: str) -> list[str]:
     codes = []
-    if LEGACY_RECOMMENDATION_FIELD_RE.search(body):
-        codes.append("legacy_recommendation_fields")
+    if HISTORICAL_RECOMMENDATION_FIELD_RE.search(body):
+        codes.append("historical_recommendation_fields")
     codes.extend(cross_paper_comparison_warning_codes(body))
     canonical_motivation_counts: dict[str, int] = {}
     for section in per_paper_entries(body):

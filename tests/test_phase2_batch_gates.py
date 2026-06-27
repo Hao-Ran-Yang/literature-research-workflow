@@ -378,7 +378,7 @@ class Phase2BatchGateTests(unittest.TestCase):
 
             self.assertEqual(result["status"], "accepted", result)
 
-    def test_accept_draft_warns_but_accepts_legacy_recommendation_fields(self) -> None:
+    def test_accept_draft_warns_but_accepts_historical_recommendation_fields(self) -> None:
         harness = load_harness()
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -391,7 +391,7 @@ class Phase2BatchGateTests(unittest.TestCase):
                 [
                     canonical_entry(
                         "arxiv:2401.00001",
-                        "Legacy Field Paper",
+                        "Historical Field Paper",
                         "B01-P01",
                         extra=["- Deep-read recommendation: yes", "- Read priority: high"],
                     )
@@ -401,7 +401,7 @@ class Phase2BatchGateTests(unittest.TestCase):
             result = harness.accept_draft(SimpleNamespace(root=str(root), batch="B01", draft=str(draft.relative_to(root)), micro_batch="", force=False, allow_write=True))
 
             self.assertEqual(result["status"], "accepted", result)
-            self.assertIn("legacy_recommendation_fields", result.get("warning_codes", []))
+            self.assertIn("historical_recommendation_fields", result.get("warning_codes", []))
 
     def test_run_next_microbatch_task_injects_canonical_block_and_full_batch_contract(self) -> None:
         harness = load_harness()
@@ -1159,7 +1159,7 @@ class Phase2BatchGateTests(unittest.TestCase):
                     "",
                     "- arXiv: 2411.04282",
                     "- Problem: This section has useful text but the heading itself is not traceable by paper id.",
-                    "- Core idea: It resembles a legacy micro-batch section and should be manually or mechanically converted before batch acceptance.",
+                    "- Core idea: It resembles a non-current micro-batch section and should be manually or mechanically converted before batch acceptance.",
                     "- Method sketch: The model samples rationales, scores them by answer likelihood, and updates toward high-quality latent reasoning.",
                     "- Evidence strength: medium at skim level, from a bounded packet rather than a full deep read.",
                     "- Deep-read recommendation: yes, high priority for objective construction and self-rewarding post-training.",
@@ -1424,7 +1424,7 @@ class Phase2BatchGateTests(unittest.TestCase):
 
         self.assertIn("arxiv:2401.00001", review["paper_ids"])
 
-    def test_check_notes_quality_accepts_canonical_batch_skim_note_without_legacy_field_noise(self) -> None:
+    def test_check_notes_quality_accepts_canonical_batch_skim_note_without_historical_field_noise(self) -> None:
         quality = load_check_notes_quality()
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -1482,15 +1482,15 @@ class Phase2BatchGateTests(unittest.TestCase):
             self.assertEqual(entry["source_candidate_table"], "candidates/accepted/B01_deep_reading_candidates.csv")
             self.assertEqual(entry["source_deep_manifest"], "phase2_papers/B01_deep_text_manifest.json")
 
-    def test_root_clean_ignores_superseded_active_files_and_registered_legacy_root_note(self) -> None:
+    def test_root_clean_ignores_superseded_active_files_and_registered_unsupported_root_note(self) -> None:
         literature_harness = load_literature_harness()
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             partial = root / "reports/accepted_overviews/B01_partial_skim_overview.md"
             partial.parent.mkdir(parents=True, exist_ok=True)
             partial.write_text("partial", encoding="utf-8")
-            legacy = root / "phase3_deep_notes.md"
-            legacy.write_text("legacy accepted", encoding="utf-8")
+            unsupported = root / "phase3_deep_notes.md"
+            unsupported.write_text("registered accepted root note", encoding="utf-8")
             write_json(root / "batches/accepted_artifacts.json", {
                 "version": 2,
                 "artifacts": [
@@ -1502,7 +1502,7 @@ class Phase2BatchGateTests(unittest.TestCase):
             result = literature_harness.check_root_clean(root)
 
             self.assertNotIn("reports/accepted_overviews/B01_partial_skim_overview.md", result["unregistered_accepted_files"])
-            self.assertNotIn("phase3_deep_notes.md", result["root_legacy_files"])
+            self.assertNotIn("phase3_deep_notes.md", result["unsupported_root_files"])
 
 
 if __name__ == "__main__":

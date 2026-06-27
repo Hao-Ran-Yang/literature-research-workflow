@@ -29,10 +29,6 @@
       "type": ["array", "string", "null"],
       "items": { "type": "string" }
     },
-    "legacy_fields": {
-      "type": ["object", "null"],
-      "additionalProperties": true
-    },
     "mathematical_view": { "type": ["string", "null"] },
     "prior_or_baseline": { "type": ["string", "null"] },
     "essential_change": { "type": ["string", "null"] },

@@ -644,7 +644,7 @@ def register_v2_artifact(args, artifact_type: str, rel_path: str, batch: str) ->
             rel_path,
             "--batch",
             batch,
-            "--quality-status",
+            "--review-status",
             "accepted",
     ]
     if old_hash:
@@ -988,7 +988,7 @@ def run_accept_phase3(args) -> dict:
             args.batch,
             "--artifact-label",
             f"{args.batch}-phase3-deep-notes",
-            "--quality-status",
+            "--review-status",
             "accepted",
             "--allow-write",
         ],

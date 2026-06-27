@@ -195,7 +195,7 @@ def complete_skim_notes() -> str:
 
 #### 1. Example Paper
 
-- Note type: phase2-skim-v1
+- Note type: non-current-skim
 - arXiv: 2401.00001
 - Technical route: Adapters
 
@@ -254,7 +254,7 @@ def complete_deep_notes() -> str:
 
 #### 1. Example Paper
 
-- Note type: phase3-deep-v1
+- Note type: non-current-deep
 - arXiv: 2401.00001
 - Why selected: Representative route.
 - Appendix checked: yes
@@ -423,10 +423,10 @@ This paper
 """
 
 
-def legacy_notes() -> str:
+def non_current_notes() -> str:
     return """# Phase 2 Reading Notes
 
-## B01 Legacy Notes
+## B01 Non-current Notes
 
 #### 1. Example Paper
 
@@ -472,15 +472,15 @@ def v2_notes() -> str:
 
 
 class ThreeStageWorkflowTests(unittest.TestCase):
-    def test_legacy_flat_state_and_final_paths_are_not_current_inputs(self) -> None:
+    def test_unsupported_root_state_and_final_paths_are_not_current_inputs(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             write_inventory(root)
-            (root / "phase2_reading_notes.md").write_text(legacy_notes(), encoding="utf-8")
+            (root / "phase2_reading_notes.md").write_text(non_current_notes(), encoding="utf-8")
             (root / "phase2_skim_notes.md").write_text(complete_skim_notes(), encoding="utf-8")
             state = run_json("check_workflow_state.py", "--root", str(root), cwd=root)
             self.assertEqual(state["workflow_mode"], "three_stage")
-            self.assertNotIn("legacy", state)
+            self.assertNotIn("unsupported_root_workflow_files", state.get("batches", {}))
 
             run_json("literature_workflow.py", "--root", str(root), "--action", "final", "--allow-write", cwd=root)
             parsed_final = json.loads((root / "phase2_reading_notes.parsed.json").read_text(encoding="utf-8"))
@@ -567,7 +567,7 @@ class ThreeStageWorkflowTests(unittest.TestCase):
             self.assertEqual(quality["batch_heading"], "2. Per-paper skim notes")
             self.assertTrue(quality["count_ok"])
 
-    def test_deep_quality_accepts_current_v2_and_rejects_legacy_v1(self) -> None:
+    def test_deep_quality_accepts_current_v2_and_rejects_non_current_note(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             write_inventory(root)
@@ -587,20 +587,20 @@ class ThreeStageWorkflowTests(unittest.TestCase):
             deep_parsed = run_json("parse_reading_notes.py", "--notes", str(deep), cwd=root)
             self.assertEqual(deep_parsed["papers"][0]["note_format"], "phase3-deep-v2")
 
-            legacy = root / "legacy_v1_deep.md"
-            legacy.write_text(complete_deep_notes(), encoding="utf-8")
-            legacy_quality = run_json(
+            non_current = root / "non_current_deep.md"
+            non_current.write_text(complete_deep_notes(), encoding="utf-8")
+            non_current_quality = run_json(
                 "check_notes_quality.py",
                 "--notes",
-                str(legacy),
+                str(non_current),
                 "--batch-heading",
                 "B01 Phase 3 Selected Deep Reading",
                 "--expected",
                 "1",
                 cwd=root,
             )
-            self.assertEqual(legacy_quality["passed"], 0)
-            self.assertIn("current note type phase3-deep-v2", legacy_quality["needs_review"][0]["missing"])
+            self.assertEqual(non_current_quality["passed"], 0)
+            self.assertIn("current note type phase3-deep-v2", non_current_quality["needs_review"][0]["missing"])
     def test_phase3_deep_v2_contract_quality_parser_and_v1_compatibility(self) -> None:
         template = (SKILL_ROOT / "templates" / "notes" / "phase3_deep_note.md").read_text(encoding="utf-8")
         self.assertIn("- Note type: phase3-deep-v2", template)
@@ -718,7 +718,7 @@ class ThreeStageWorkflowTests(unittest.TestCase):
             no_prior_without_reason = no_prior.replace(". Reason: benchmark-only protocol.", ".")
             self.assertIn("Deep diagram no-prior reason", quality_missing(no_prior_without_reason))
 
-            legacy_mermaid_verbose = complete_deep_v2_notes().replace(
+            verbose_mermaid = complete_deep_v2_notes().replace(
                 "```text\n"
                 "Direct baseline\n"
                 "  [Input] -> [Full-model update] -> [Output]\n\n"
@@ -740,7 +740,7 @@ class ThreeStageWorkflowTests(unittest.TestCase):
                 "  end\n"
                 "```",
             )
-            self.assertIn("Deep Mermaid nodes should stay computation-flow focused", quality_missing(legacy_mermaid_verbose))
+            self.assertIn("Deep Mermaid nodes should stay computation-flow focused", quality_missing(verbose_mermaid))
 
             missing_verdict = complete_deep_v2_notes().replace(
                 "| Adapters reduce cost | supported | Table 1 | Hardware effects may vary | Reliable enough for a small reproduction |",
@@ -782,7 +782,7 @@ class ThreeStageWorkflowTests(unittest.TestCase):
             self.assertTrue((root / "phase1_report.md").exists())
             self.assertFalse((root / "phase2_skim_notes.md").exists())
 
-    def test_legacy_note_formats_are_not_current_parser_inputs(self) -> None:
+    def test_non_current_note_formats_are_not_current_parser_inputs(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             v2 = root / "v2.md"
@@ -799,15 +799,15 @@ class ThreeStageWorkflowTests(unittest.TestCase):
             )
             self.assertNotEqual(completed.returncode, 0)
             self.assertIn("invalid choice", completed.stderr)
-    def test_root_legacy_notes_do_not_contribute_to_current_state(self) -> None:
+    def test_root_non_current_notes_do_not_contribute_to_current_state(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             write_inventory(root)
-            (root / "phase2_reading_notes.md").write_text("# Legacy\n\n#### Paper\n- arXiv: 2401.00001\n", encoding="utf-8")
+            (root / "phase2_reading_notes.md").write_text("# Non-current\n\n#### Paper\n- arXiv: 2401.00001\n", encoding="utf-8")
             state = run_json("check_workflow_state.py", "--root", str(root), cwd=root)
             self.assertEqual(state["workflow_mode"], "three_stage")
             self.assertEqual(state["batches"]["B01"]["effective_notes_entries"], 0)
-            self.assertNotIn("legacy_notes_entries", state["batches"]["B01"])
+            self.assertNotIn("root_notes_entries", state["batches"]["B01"])
     def test_hybrid_notes_do_not_inflate_skim_completion(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -821,7 +821,7 @@ class ThreeStageWorkflowTests(unittest.TestCase):
                 rows.append(row)
             write_inventory_rows(root, rows)
             (root / "phase2_skim_notes.md").write_text("# Skim\n\n#### Paper 1\n- arXiv: 2401.00001\n", encoding="utf-8")
-            (root / "phase2_reading_notes.md").write_text("# Legacy\n\n#### Paper 2\n- arXiv: 2401.00002\n", encoding="utf-8")
+            (root / "phase2_reading_notes.md").write_text("# Non-current\n\n#### Paper 2\n- arXiv: 2401.00002\n", encoding="utf-8")
             (root / "phase3_deep_notes.md").write_text("# Deep\n\n#### Paper 3\n- arXiv: 2401.00003\n", encoding="utf-8")
             state = run_json("check_workflow_state.py", "--root", str(root), cwd=root)
             self.assertEqual(state["batches"]["B01"]["status"], "skim_started")
@@ -847,11 +847,11 @@ class ThreeStageWorkflowTests(unittest.TestCase):
             self.assertIn("review phase3 failures", state["next_action"])
             self.assertTrue(state["phase3"]["warnings"])
 
-    def test_check_batch_quality_ignores_root_legacy_notes_file(self) -> None:
+    def test_check_batch_quality_ignores_root_non_current_notes_file(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             write_inventory(root)
-            (root / "phase2_reading_notes.md").write_text(legacy_notes(), encoding="utf-8")
+            (root / "phase2_reading_notes.md").write_text(non_current_notes(), encoding="utf-8")
             checked = run_json(
                 "literature_workflow.py", "--root", str(root), "--action", "check-batch", "--batch", "B01", "--check-notes-quality", cwd=root
             )
@@ -1045,7 +1045,7 @@ class ThreeStageWorkflowTests(unittest.TestCase):
             self.assertNotIn("## Accepted deep-reading failures / warnings", questions)
             self.assertIn("## Phase 3 Extraction Failures", questions)
 
-    def test_mature_project_missing_report_and_legacy_cli_permissions(self) -> None:
+    def test_mature_project_missing_report_and_current_alias_permissions(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             row = write_inventory(root)
@@ -1232,11 +1232,11 @@ class ThreeStageWorkflowTests(unittest.TestCase):
             clean = run_json("literature_harness.py", "--root", str(root), "--action", "check-root-clean", cwd=root)
             self.assertIn("notes/accepted/unregistered.md", clean["unregistered_accepted_files"])
             (root / "random_notes.md").write_text("# stray\n", encoding="utf-8")
-            (root / "phase2_skim_notes.md").write_text("# legacy\n", encoding="utf-8")
+            (root / "phase2_skim_notes.md").write_text("# non-current root file\n", encoding="utf-8")
             (root / "scratch").write_text("temporary", encoding="utf-8")
             clean = run_json("literature_harness.py", "--root", str(root), "--action", "check-root-clean", cwd=root)
             self.assertIn("random_notes.md", clean["root_unexpected_files"])
-            self.assertIn("phase2_skim_notes.md", clean["root_legacy_files"])
+            self.assertIn("phase2_skim_notes.md", clean["unsupported_root_files"])
             self.assertIn("scratch", clean["extensionless_tmp_files"])
 
             body = root / "phase2_papers" / "paper.body.txt"
@@ -1536,7 +1536,7 @@ class ThreeStageWorkflowTests(unittest.TestCase):
                 "reports/accepted_overviews/B01_skim_overview.md",
                 "--batch",
                 "B01",
-                "--quality-status",
+                "--review-status",
                 "accepted",
                 "--supersedes",
                 "reports/accepted_overviews/B01_skim_overview.md",
