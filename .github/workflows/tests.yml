@@ -1,0 +1,56 @@
+name: tests
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      suite:
+        description: Test suite to run
+        required: true
+        default: fast
+        type: choice
+        options:
+          - fast
+          - integration
+          - slow
+          - all
+
+jobs:
+  fast:
+    name: Fast tests
+    runs-on: ubuntu-latest
+    if: github.event_name != 'workflow_dispatch' || inputs.suite == 'fast' || inputs.suite == 'all'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Compile scripts
+        run: python -m compileall -q scripts tests
+      - name: Run fast tests
+        run: python -B -m unittest tests.test_minimal_skill_repair tests.test_phase2_batch_gates tests.test_three_stage_workflow_fast
+
+  integration:
+    name: Integration tests
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch' && (inputs.suite == 'integration' || inputs.suite == 'all')
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Run integration tests
+        run: python -B -m unittest tests.integration_three_stage_workflow
+
+  slow:
+    name: Slow e2e tests
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch' && (inputs.suite == 'slow' || inputs.suite == 'all')
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Run slow e2e tests
+        run: python -B -m unittest tests.slow_three_stage_workflow
