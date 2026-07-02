@@ -5,7 +5,8 @@ from collections import Counter, defaultdict
 from pathlib import Path
 
 
-REQUIRED = ["arxiv_id", "title", "abs_url", "pdf_url", "method_category", "reading_batch"]
+REQUIRED = ["paper_id", "method_category", "reading_batch"]
+ANY_OF_REQUIRED = [("title", "canonical_title")]
 
 
 def main() -> None:
@@ -23,16 +24,22 @@ def main() -> None:
         for field in args.require:
             if not (row.get(field) or "").strip():
                 missing[field].append(idx)
+        for group in ANY_OF_REQUIRED:
+            if not any((row.get(field) or "").strip() for field in group):
+                missing["/".join(group)].append(idx)
 
-    id_counts = Counter((row.get("arxiv_id") or "").strip() for row in rows if (row.get("arxiv_id") or "").strip())
-    duplicates = {key: count for key, count in id_counts.items() if count > 1}
+    paper_id_counts = Counter((row.get("paper_id") or "").strip() for row in rows if (row.get("paper_id") or "").strip())
+    duplicates = {key: count for key, count in paper_id_counts.items() if count > 1}
+    arxiv_id_counts = Counter((row.get("arxiv_id") or "").strip() for row in rows if (row.get("arxiv_id") or "").strip())
+    duplicate_arxiv_ids = {key: count for key, count in arxiv_id_counts.items() if count > 1}
     batch_counts = Counter((row.get("reading_batch") or "").strip() or "<missing>" for row in rows)
     category_counts = Counter((row.get("method_category") or "").strip() or "<missing>" for row in rows)
 
     output = {
         "inventory": str(path),
         "rows": len(rows),
-        "duplicate_arxiv_ids": duplicates,
+        "duplicate_paper_ids": duplicates,
+        "duplicate_arxiv_ids": duplicate_arxiv_ids,
         "missing_required": dict(missing),
         "batch_counts": dict(batch_counts),
         "category_counts": dict(category_counts),

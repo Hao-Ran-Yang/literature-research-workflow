@@ -12,6 +12,8 @@ def read_rows(path: Path) -> list[dict]:
 
 
 def year(row: dict) -> str:
+    if (row.get("year") or "").strip():
+        return row["year"].strip()
     for key in ("first_submitted", "latest_version_date"):
         value = row.get(key, "")
         if len(value) >= 4 and value[:4].isdigit():
@@ -36,11 +38,11 @@ def priority_rank(row: dict) -> int:
 
 
 def paper_label(row: dict) -> str:
-    title = row.get("title") or "<missing title>"
-    arxiv_id = row.get("arxiv_id") or "<missing id>"
+    title = row.get("title") or row.get("canonical_title") or "<missing title>"
+    paper_id = row.get("paper_id") or row.get("arxiv_id") or "<missing id>"
     category = row.get("method_category") or "<missing category>"
     priority = row.get("reading_priority") or "medium"
-    return f"- **{title}** ({arxiv_id}) [{priority}; {category}]"
+    return f"- **{title}** ({paper_id}) [{priority}; {category}]"
 
 
 def main() -> None:
@@ -101,7 +103,7 @@ def main() -> None:
         "## Summary",
         "",
         f"- Total papers: {len(rows)}",
-        f"- Unique arXiv IDs: {len(set(row.get('arxiv_id', '') for row in rows if row.get('arxiv_id', '')))}",
+        f"- Unique paper IDs: {len(set((row.get('paper_id') or row.get('arxiv_id') or '') for row in rows if (row.get('paper_id') or row.get('arxiv_id'))))}",
         "",
         count_table("Source Sections", section_counts),
         count_table("Method Categories", category_counts),
@@ -128,9 +130,11 @@ def main() -> None:
 
     gaps = []
     for row in rows:
-        missing = [key for key in ("title", "authors", "method_category", "reading_batch") if not row.get(key)]
+        missing = [key for key in ("authors", "method_category", "reading_batch") if not row.get(key)]
+        if not (row.get("title") or row.get("canonical_title")):
+            missing.append("title/canonical_title")
         if missing:
-            gaps.append(f"- {row.get('arxiv_id', '<missing id>')}: missing {', '.join(missing)}")
+            gaps.append(f"- {row.get('paper_id') or row.get('arxiv_id') or '<missing id>'}: missing {', '.join(missing)}")
     lines.extend(gaps or ["- No obvious required metadata gaps detected."])
     lines.append("")
 

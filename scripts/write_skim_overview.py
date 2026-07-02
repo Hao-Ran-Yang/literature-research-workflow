@@ -362,12 +362,12 @@ def write_overview(path: Path, papers: list[dict], candidates: list[dict]) -> No
         for row in candidates
     ]
     skip_rows = [
-        [paper["reading_batch"], paper["title"], paper["arxiv_id"], paper["recommendation_reason"]]
+        [paper["reading_batch"], paper["title"], paper["paper_id"] or paper["arxiv_id"], paper["recommendation_reason"]]
         for paper in papers
         if paper["recommendation"] == "no"
     ]
     diagram_review_rows = [
-        [paper["reading_batch"], paper["title"], paper["arxiv_id"], paper["diagram_verification"] or "missing"]
+        [paper["reading_batch"], paper["title"], paper["paper_id"] or paper["arxiv_id"], paper["diagram_verification"] or "missing"]
         for paper in papers
         if paper.get("diagram_verification") and paper["diagram_verification"].lower() != "verified"
     ]
@@ -393,11 +393,11 @@ def write_overview(path: Path, papers: list[dict], candidates: list[dict]) -> No
                 "",
                 "## Low-Priority Or Skippable Papers",
                 "",
-                md_table(["Batch", "Paper", "arXiv", "Reason"], skip_rows),
+                md_table(["Batch", "Paper", "Paper ID", "Reason"], skip_rows),
                 "",
                 "## Method Diagrams Needing Review",
                 "",
-                md_table(["Batch", "Paper", "arXiv", "Diagram verification"], diagram_review_rows),
+                md_table(["Batch", "Paper", "Paper ID", "Diagram verification"], diagram_review_rows),
                 "",
             ]
         ),

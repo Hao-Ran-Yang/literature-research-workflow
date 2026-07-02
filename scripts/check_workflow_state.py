@@ -72,8 +72,18 @@ def normalized_arxiv_id(value: str) -> str:
     return re.sub(r"v\d+$", "", value, flags=re.IGNORECASE)
 
 
+def normalized_paper_id(value: str) -> str:
+    value = str(value or "").strip()
+    if not value:
+        return ""
+    match = re.search(r"(?i)(?:arxiv:)?(\d{4}\.\d{4,5})(?:v\d+)?", value)
+    if match:
+        return f"arxiv:{match.group(1)}"
+    return value
+
+
 def normalized_row_arxiv_id(row: dict) -> str:
-    return normalized_arxiv_id(row.get("paper_id") or row.get("arxiv_id") or "")
+    return normalized_paper_id(row.get("paper_id") or row.get("arxiv_id") or "")
 
 
 def safe_name(value: str) -> str:
@@ -155,6 +165,16 @@ def note_arxiv_ids(notes_path: Path) -> set[str]:
     return {normalized_arxiv_id(match.group(1)) for match in ARXIV_RE.finditer(notes_path.read_text(encoding="utf-8", errors="replace"))}
 
 
+def note_paper_ids(notes_path: Path) -> set[str]:
+    if not notes_path.exists():
+        return set()
+    text = notes_path.read_text(encoding="utf-8", errors="replace")
+    ids = {normalized_paper_id(match.group(1)) for match in re.finditer(r"(?m)^###\s+(\S+)\s+-\s+", text)}
+    ids.update(normalized_paper_id(match.group(1)) for match in re.finditer(r"(?i)paper_id=([^\s,;]+)", text))
+    ids.update(f"arxiv:{item}" for item in note_arxiv_ids(notes_path))
+    return {item for item in ids if item}
+
+
 def registry_skim_ids_by_batch(root: Path) -> dict[str, set[str]]:
     data = read_json(root / "batches" / "accepted_artifacts.json") or {}
     artifacts = data.get("artifacts", []) if isinstance(data, dict) else []
@@ -169,7 +189,7 @@ def registry_skim_ids_by_batch(root: Path) -> dict[str, set[str]]:
         if not code:
             continue
         for paper_id in item.get("paper_ids") or []:
-            normalized = normalized_arxiv_id(str(paper_id))
+            normalized = normalized_paper_id(str(paper_id))
             if normalized:
                 ids_by_batch[code].add(normalized)
     return dict(ids_by_batch)
@@ -325,7 +345,7 @@ def accepted_deep_note_path(root: Path, requested: Path, batch: str = "") -> Pat
 
 def accepted_failure_ids(root: Path, stage: str) -> set[str]:
     data = read_json(root / "accepted_failures.json") or {}
-    return {normalized_arxiv_id(str(item)) for item in data.get(stage, [])} if isinstance(data.get(stage, []), list) else set()
+    return {normalized_paper_id(str(item)) for item in data.get(stage, [])} if isinstance(data.get(stage, []), list) else set()
 
 
 def phase3_summary(root: Path, candidates_path: Path, deep_manifest_path: Path, deep_notes_path: Path, phase2_complete: bool) -> dict:
@@ -349,7 +369,7 @@ def phase3_summary(root: Path, candidates_path: Path, deep_manifest_path: Path, 
     selected_ids = {normalized_row_arxiv_id(row) for row in selected}
     accepted_ids = accepted_failure_ids(root, "phase3_deep_text") & selected_ids
     required_ids = selected_ids - accepted_ids
-    deep_note_ids = note_arxiv_ids(deep_notes_path)
+    deep_note_ids = note_paper_ids(deep_notes_path)
     required_notes_complete = bool(required_ids) and required_ids.issubset(deep_note_ids)
     accepted_failures_only = bool(selected_ids) and not required_ids and bool(accepted_ids)
     can_continue_final_with_warnings = bool(accepted_ids) and required_ids.issubset(deep_note_ids)
@@ -456,11 +476,15 @@ def main() -> None:
     if template_v2:
         deep_notes_path = accepted_deep_note_path(root, deep_notes_path, phase3_batch)
     rows = read_inventory(inventory_path)
-    inventory_batch_by_id = {
-        normalized_arxiv_id(row.get("arxiv_id", "")): batch_code(row.get("reading_batch", ""))
-        for row in rows
-        if row.get("arxiv_id")
-    }
+    inventory_batch_by_id = {}
+    for row in rows:
+        code = batch_code(row.get("reading_batch", ""))
+        paper_id = normalized_paper_id(row.get("paper_id") or row.get("arxiv_id") or "")
+        if paper_id:
+            inventory_batch_by_id[paper_id] = code
+        arxiv_id = normalized_arxiv_id(row.get("arxiv_id", ""))
+        if arxiv_id:
+            inventory_batch_by_id[arxiv_id] = code
     skim_ids_by_batch = note_ids_by_batch(skim_notes_path, inventory_batch_by_id)
     registry_skim_ids = registry_skim_ids_by_batch(root)
     for code, ids in registry_skim_ids.items():

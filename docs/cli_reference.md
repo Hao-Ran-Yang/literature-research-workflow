@@ -4,6 +4,8 @@ Prefer `scripts/literature_workflow.py` for normal use. Use direct helpers for d
 
 All runner commands that write files require `--allow-write`. Network actions additionally require `--allow-network`.
 
+Template-v2 multi-source projects use `paper_id` as the canonical identity. `arxiv_id` is an optional alias. Source/link classification and new safe filenames go through `scripts/source_adapters.py`; legacy arXiv helpers remain available only for older arXiv-only workflows or manual recovery.
+
 ## Daily State Commands
 
 ```bash
@@ -165,6 +167,8 @@ python scripts/check_notes_quality.py --notes notes/accepted/B03.md --batch-head
 
 ## PDF Helpers
 
+Legacy arXiv-oriented helpers are listed here for explicit debugging or recovery. They are not the template-v2 multi-source main entrypoint, and current projects should prefer `literature_workflow.py --action prepare-batch` and `--action import-local-pdfs`.
+
 Create manifest and main-body text:
 
 ```bash
@@ -187,6 +191,15 @@ node scripts/download_batch_node.mjs --manifest phase2_papers/B03_manifest.json 
 ```
 
 Direct phase2 downloading is an emergency fallback and requires explicit `--download`.
+
+Legacy arXiv-only helpers retained for compatibility:
+
+```bash
+python scripts/build_phase1_inventory.py --help
+python scripts/collect_arxiv_pdfs.py --help
+node scripts/ensure_raw_papers_node.mjs --help
+node scripts/download_batch_node.mjs --help
+```
 
 ## Contracts And Runtime
 

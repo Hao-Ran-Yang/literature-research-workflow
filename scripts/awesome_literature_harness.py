@@ -10,6 +10,15 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from registry_utils import is_active_artifact, lifecycle_status, normalize_artifact_entry
+from source_adapters import (
+    SourceIdentity,
+    canonical_pdf_status,
+    classify_source_link,
+    derive_public_pdf_url,
+    make_dedup_key,
+    pdf_match_keys,
+    safe_filename_for_paper_id,
+)
 from workflow_safety import atomic_write_csv, atomic_write_json, atomic_write_text, require_network_permission, require_write_permission
 
 
@@ -103,6 +112,8 @@ WORKFLOW_FIELDS = [
     "canonical_source",
     "official_url",
     "public_pdf_url",
+    "source_family",
+    "source_family_id",
     "source_type",
     "source_role",
     "venue",
@@ -133,6 +144,9 @@ SOURCE_ITEM_FIELDS = [
     "source_item_text",
     "source_url",
     "link_type",
+    "source_role",
+    "source_family",
+    "source_family_id",
     "title_hint",
     "venue_hint",
     "year_hint",
@@ -456,29 +470,8 @@ def clean_title_hint(line: str) -> str:
     return re.sub(r"\s+", " ", line).strip(" -:|")[:240]
 
 
-def classify_link(url: str) -> tuple[str, str, str, str, str]:
-    arxiv = ARXIV_RE.search(url)
-    if arxiv and "arxiv.org" in url.lower():
-        return f"arxiv:{arxiv.group('id')}", "arxiv", "paper", arxiv.group("id"), f"https://arxiv.org/abs/{arxiv.group('id')}"
-    openreview = OPENREVIEW_RE.search(url)
-    if openreview:
-        oid = openreview.group("id")
-        return f"openreview:{oid}", "openreview", "paper", "", url
-    acl = ACL_RE.search(url)
-    if acl:
-        aid = acl.group("id").rstrip("/")
-        return f"acl:{aid}", "acl", "paper", "", url
-    pmlr = PMLR_RE.search(url)
-    if pmlr:
-        pid = pmlr.group("id").rstrip("/")
-        return f"pmlr:{pid}", "pmlr", "paper", "", url
-    if NEURIPS_RE.search(url):
-        return f"neurips:{short_hash(url)}", "neurips", "paper", "", url
-    if url.lower().endswith(".pdf") or ".pdf?" in url.lower():
-        return f"urlhash:{short_hash(url)}", "official_pdf", "paper", "", url
-    if "github.com" in url.lower():
-        return f"urlhash:{short_hash(url)}", "code", "code", "", url
-    return f"urlhash:{short_hash(url)}", "project", "project", "", url
+def classify_link(url: str) -> SourceIdentity:
+    return classify_source_link(url)
 
 
 def extract_source_items(root: Path, base: Path, source: str, snapshot_id: str) -> tuple[list[dict], list[dict], list[dict], dict]:
@@ -492,12 +485,16 @@ def extract_source_items(root: Path, base: Path, source: str, snapshot_id: str) 
         text = path.read_text(encoding="utf-8", errors="replace")
         included.append({"path": str(path.relative_to(base) if path.is_relative_to(base) else path.name), "sha256": sha256_text(text), "bytes": len(text.encode("utf-8"))})
         section = "Uncategorized"
+        block_primary_paper_id = ""
+        block_primary_line = 0
         has_methods_heading = any((heading := HEADING_RE.match(item)) and heading.group(2).strip().lower() == "methods" for item in text.splitlines())
         in_methods_scope = not has_methods_heading
         methods_level = 0
         for line_no, line in enumerate(text.splitlines(), start=1):
             heading = HEADING_RE.match(line)
             if heading:
+                block_primary_paper_id = ""
+                block_primary_line = 0
                 level = len(heading.group(1))
                 title = heading.group(2).strip()
                 normalized = title.lower()
@@ -510,8 +507,14 @@ def extract_source_items(root: Path, base: Path, source: str, snapshot_id: str) 
                     section = title
                 else:
                     section = title
+            elif not line.strip():
+                block_primary_paper_id = ""
+                block_primary_line = 0
             if not in_methods_scope:
                 continue
+            if re.match(r"^\s*(?:[-*+]|\d+[.)])\s+", line):
+                block_primary_paper_id = ""
+                block_primary_line = 0
             urls = set(match.group(0).rstrip(".,;") for match in URL_RE.finditer(line))
             for md_title, md_url in MD_LINK_RE.findall(line):
                 if md_url.startswith("http"):
@@ -521,19 +524,26 @@ def extract_source_items(root: Path, base: Path, source: str, snapshot_id: str) 
                 if arxiv_inline:
                     aid = arxiv_inline.group("id")
                     urls.add(f"https://arxiv.org/abs/{aid}")
-            classified = [(url, *classify_link(url)) for url in sorted(urls)]
-            primary = next((item for item in classified if item[3] == "paper" and item[2] != "official_pdf"), None)
-            primary_paper_id = primary[1] if primary else ""
-            for url, raw_paper_id, link_type, source_role, arxiv_id, official_url in classified:
-                paper_id = raw_paper_id
-                if link_type == "official_pdf" and primary_paper_id:
+            classified = [(url, classify_link(url)) for url in sorted(urls)]
+            primary = next((item for item in classified if item[1].source_role == "paper" and item[1].link_type != "official_pdf"), None)
+            primary_paper_id = primary[1].paper_id if primary else block_primary_paper_id
+            if primary and primary[1].paper_id:
+                block_primary_paper_id = primary[1].paper_id
+                block_primary_line = line_no
+            elif block_primary_paper_id and line_no - block_primary_line > 8:
+                primary_paper_id = ""
+                block_primary_paper_id = ""
+                block_primary_line = 0
+            for url, classified_link in classified:
+                paper_id = classified_link.paper_id
+                if classified_link.link_type == "official_pdf" and primary_paper_id:
                     paper_id = primary_paper_id
-                elif source_role != "paper" and primary_paper_id:
+                elif classified_link.source_role != "paper" and primary_paper_id:
                     paper_id = primary_paper_id
-                elif source_role != "paper":
+                elif classified_link.source_role != "paper":
                     continue
                 title_hint = clean_title_hint(line)
-                dedup_key = paper_id
+                dedup_key = make_dedup_key({"paper_id": paper_id, "source_url": url})
                 source_item_id = short_hash("|".join([snapshot_id, str(path), str(line_no), url, line.strip()]))
                 year_match = re.search(r"\b(20\d{2}|19\d{2})\b", line)
                 row = {
@@ -547,31 +557,37 @@ def extract_source_items(root: Path, base: Path, source: str, snapshot_id: str) 
                     "source_line": str(line_no),
                     "source_item_text": line.strip()[:1000],
                     "source_url": url,
-                    "link_type": link_type,
+                    "link_type": classified_link.link_type,
+                    "source_role": classified_link.source_role,
+                    "source_family": classified_link.source_family,
+                    "source_family_id": classified_link.source_family_id,
                     "title_hint": title_hint,
-                    "venue_hint": link_type if link_type in {"acl", "pmlr", "neurips", "openreview"} else "",
+                    "venue_hint": classified_link.source_family if classified_link.source_family in {"acl", "pmlr", "neurips", "openreview"} else "",
                     "year_hint": year_match.group(1) if year_match else "",
                     "tag_hint": section,
                     "created_at": created_at,
                 }
                 source_rows.append(row)
-                if source_role != "paper":
+                if classified_link.source_role != "paper":
                     continue
                 paper = papers.get(paper_id)
                 if paper is None:
-                    public_pdf = url if link_type == "official_pdf" else (f"https://arxiv.org/pdf/{arxiv_id}.pdf" if arxiv_id else "")
+                    public_pdf = derive_public_pdf_url(classified_link, evidence_links=[item[0] for item in classified if item[1].link_type == "official_pdf"])
+                    pdf_status = canonical_pdf_status(classified_link.pdf_status if public_pdf or classified_link.pdf_status != "pdf_unavailable" else "needs_pdf_review")
                     papers[paper_id] = {
                         "schema_version": SCHEMA_VERSION,
                         "paper_id": paper_id,
                         "dedup_key": dedup_key,
-                        "arxiv_id": arxiv_id,
+                        "arxiv_id": classified_link.arxiv_id,
                         "canonical_title": title_hint,
-                        "canonical_source": link_type,
-                        "official_url": official_url,
+                        "canonical_source": classified_link.source_family,
+                        "official_url": classified_link.official_url,
                         "public_pdf_url": public_pdf,
-                        "source_type": "paper" if source_role == "paper" else source_role,
-                        "source_role": source_role,
-                        "venue": link_type if link_type in {"acl", "pmlr", "neurips", "openreview"} else "",
+                        "source_family": classified_link.source_family,
+                        "source_family_id": classified_link.source_family_id,
+                        "source_type": "paper",
+                        "source_role": classified_link.source_role,
+                        "venue": classified_link.source_family if classified_link.source_family in {"acl", "pmlr", "neurips", "openreview"} else "",
                         "year": row["year_hint"],
                         "authors": "",
                         "abstract": "",
@@ -580,12 +596,12 @@ def extract_source_items(root: Path, base: Path, source: str, snapshot_id: str) 
                         "application_tag": "",
                         "reading_batch": "",
                         "reading_priority": "core_skim" if re.search(r"\b(core|must|survey|benchmark|representative)\b", line, re.I) else "normal",
-                        "metadata_status": "partially_verified" if link_type in {"arxiv", "acl", "pmlr", "neurips", "openreview"} else "metadata_unverified",
-                        "metadata_evidence": f"{link_type}_url" if link_type else "source_markdown_hint",
-                        "pdf_status": "available_remote" if public_pdf else "pdf_unavailable",
+                        "metadata_status": classified_link.metadata_status,
+                        "metadata_evidence": f"{classified_link.source_family}_url" if classified_link.source_family else "source_markdown_hint",
+                        "pdf_status": "available" if public_pdf else pdf_status,
                         "extraction_status": "not_started",
                         "packet_status": "not_started",
-                        "notes": "",
+                        "notes": classified_link.warning,
                     }
                 else:
                     if title_hint and paper.get("canonical_title") and title_hint.lower() != paper["canonical_title"].lower() and len(title_hint) > 8:
@@ -603,9 +619,9 @@ def extract_source_items(root: Path, base: Path, source: str, snapshot_id: str) 
                             "status": "unresolved",
                             "resolution_notes": "",
                         })
-                    if url.lower().endswith(".pdf") and not paper.get("public_pdf_url"):
+                    if classified_link.link_type == "official_pdf" and not paper.get("public_pdf_url"):
                         paper["public_pdf_url"] = url
-                        paper["pdf_status"] = "available_remote"
+                        paper["pdf_status"] = "available"
     snapshot = {
         "schema_version": SCHEMA_VERSION,
         "source_snapshot_id": snapshot_id,
@@ -917,7 +933,7 @@ def validate_pdf(path: Path, max_bytes: int = 80_000_000) -> tuple[bool, str]:
 
 
 def managed_pdf_path(root: Path, paper_id: str, existing: set[str]) -> Path:
-    slug = safe_slug(paper_id)
+    slug = safe_filename_for_paper_id(paper_id)
     candidate = root / "phase2_papers" / "managed_pdfs" / f"{slug}.pdf"
     if candidate.name in existing:
         candidate = root / "phase2_papers" / "managed_pdfs" / f"{slug}_{short_hash(paper_id, 8)}.pdf"
@@ -1195,7 +1211,9 @@ def prepare_batch(args) -> dict:
     for idx, row in enumerate(rows, start=1):
         paper_id = row["paper_id"]
         public_pdf = row.get("public_pdf_url", "")
-        pdf_status = "available_remote" if public_pdf else "pdf_unavailable"
+        pdf_status = "available" if public_pdf else canonical_pdf_status(row.get("pdf_status", "needs_pdf_review"))
+        if pdf_status == "pdf_unavailable" and row.get("source_role", "paper") == "paper":
+            pdf_status = "needs_pdf_review"
         extraction_status = "not_started"
         packet_status = "not_started"
         error = ""
@@ -1205,7 +1223,7 @@ def prepare_batch(args) -> dict:
         if local_pdf_path:
             pdf_candidate = project_path(root, local_pdf_path)
             ok, reason = validate_pdf(pdf_candidate)
-            pdf_status = "imported_local" if ok else "invalid_pdf"
+            pdf_status = "available" if ok else "invalid_pdf"
             error = reason
         elif public_pdf and getattr(args, "download", False):
             if not getattr(args, "allow_network", False):
@@ -1226,7 +1244,7 @@ def prepare_batch(args) -> dict:
                     managed_pdf.parent.mkdir(parents=True, exist_ok=True)
                     managed_pdf.write_bytes(data)
                     ok, reason = validate_pdf(managed_pdf)
-                    pdf_status = "downloaded" if ok else "invalid_pdf"
+                    pdf_status = "available" if ok else "invalid_pdf"
                     error = reason
                     local_pdf_path = managed_pdf.relative_to(root).as_posix() if ok else ""
                 except Exception as exc:  # noqa: BLE001
@@ -1305,7 +1323,8 @@ def prepare_batch(args) -> dict:
             extraction_status = "skipped_no_pdf"
             packet_status = "skipped_no_text"
             if not public_pdf:
-                pdf_status = "pdf_unavailable"
+                if pdf_status == "pdf_unavailable" and row.get("source_role", "paper") == "paper":
+                    pdf_status = "needs_pdf_review"
                 error = "missing public_pdf_url"
         manifest.append({
             "schema_version": SCHEMA_VERSION,
@@ -1334,7 +1353,7 @@ def prepare_batch(args) -> dict:
         "body_manifest": body_manifest_path.relative_to(root).as_posix(),
         "packet_manifest": packet_manifest_path.relative_to(root).as_posix(),
         "readable_papers": len(packets),
-        "pdf_unavailable": sum(1 for item in manifest if item["pdf_status"] in {"pdf_unavailable", "needs_manual_pdf"}),
+        "pdf_unavailable": sum(1 for item in manifest if item["pdf_status"] in {"pdf_unavailable", "needs_pdf_review", "needs_manual_pdf"}),
         "missing_pdfs": missing_report["missing_pdfs"],
         "human_report": missing_report["human_report"],
         "errors": [],
@@ -1351,12 +1370,7 @@ def row_pdf_candidates(root: Path, row: dict) -> list[Path]:
     if local_pdf:
         candidates.append(project_path(root, local_pdf))
     search_dirs = [root / "raw_papers", root / "phase2_papers" / "managed_pdfs"]
-    identifiers = [
-        normalize_text(row.get("paper_id", "")),
-        normalize_text(row.get("arxiv_id", "")),
-        normalize_text(row.get("canonical_title", "") or row.get("title", "")),
-    ]
-    identifiers = [item for item in identifiers if item]
+    identifiers = sorted(pdf_match_keys(row), key=len, reverse=True)
     for search_dir in search_dirs:
         if not search_dir.exists():
             continue
@@ -1441,12 +1455,11 @@ def import_local_pdfs(args) -> dict:
     manifest_updates = []
     for row in rows:
         paper_id = row.get("paper_id", "")
-        arxiv_id = row.get("arxiv_id", "")
-        title = normalize_text(row.get("canonical_title", ""))
+        identifiers = sorted(pdf_match_keys(row), key=len, reverse=True)
         found = None
         for pdf in pdfs:
             name = normalize_text(pdf.stem)
-            if normalize_text(paper_id) in name or (arxiv_id and normalize_text(arxiv_id) in name) or (title and (title in name or name in title)):
+            if any(identifier in name or name in identifier for identifier in identifiers):
                 found = pdf
                 break
         if not found:
@@ -1460,7 +1473,7 @@ def import_local_pdfs(args) -> dict:
         if target.exists() and not replace_managed:
             manifest_updates.append({
                 "paper_id": paper_id,
-                "pdf_status": "imported_local",
+                "pdf_status": "available",
                 "local_pdf_path": target.relative_to(root).as_posix(),
                 "error_message": "managed_pdf_exists",
                 "source_pdf_path": str(found),
@@ -1470,7 +1483,7 @@ def import_local_pdfs(args) -> dict:
             target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(found, target)
             matched.append({"paper_id": paper_id, "source": str(found), "target": target.relative_to(root).as_posix()})
-            manifest_updates.append({"paper_id": paper_id, "pdf_status": "imported_local", "local_pdf_path": target.relative_to(root).as_posix(), "error_message": ""})
+            manifest_updates.append({"paper_id": paper_id, "pdf_status": "available", "local_pdf_path": target.relative_to(root).as_posix(), "error_message": ""})
     # Persist local path to inventory so prepare-batch can consume it.
     all_rows = read_csv(inventory_path(root))
     updates = {item["paper_id"]: item for item in manifest_updates}

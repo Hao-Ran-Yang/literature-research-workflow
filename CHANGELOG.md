@@ -4,6 +4,25 @@ All notable changes to this project will be documented in this file.
 
 This project follows a pragmatic alpha-stage changelog format. Version numbers may be adjusted as the public release process becomes more formal.
 
+## [Unreleased]
+
+### Added
+
+- Added `scripts/source_adapters.py` as the canonical helper for source URL classification, `paper_id` normalization, dedup keys, source roles/families, PDF status, safe filenames for newly generated files, and local PDF match aliases.
+- Added multi-source tests for arXiv, OpenReview, Hugging Face papers, DOI, ACL Anthology, PMLR, NeurIPS, direct PDF URLs, GitHub code links, and Hugging Face model/dataset/space resources.
+
+### Changed
+
+- Updated the template-v2 main ingestion flow to be `paper_id`-first; `arxiv_id` is now an optional alias rather than a required identity.
+- Added conservative canonical `pdf_status` semantics: `available`, `needs_pdf_review`, and `pdf_unavailable`.
+- Kept legacy arXiv helpers for older arXiv-only workflows and manual recovery, while documenting that they are not the template-v2 multi-source main entrypoint.
+
+### Fixed
+
+- Prevented non-arXiv papers from failing inventory quality or workflow state checks solely because `arxiv_id` is missing.
+- Fixed mixed-source evidence attribution so GitHub/Hugging Face resource links do not become standalone papers when they can be assigned to a primary paper.
+- Fixed a boundary case where a standalone direct PDF in a new bullet item could be incorrectly attributed to the previous bullet's paper.
+
 ## [0.1.0-alpha] - 2026-06-27
 
 ### Added

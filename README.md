@@ -24,6 +24,14 @@ The workflow is intentionally conservative: Codex should read from bounded evide
 
 ---
 
+## Paper identity
+
+Template-v2 projects use `paper_id` as the canonical paper identity. `arxiv_id` is an optional alias for arXiv-backed papers, not a required field. Source links are classified through `scripts/source_adapters.py`, which currently supports arXiv, OpenReview, Hugging Face papers, DOI, ACL Anthology, PMLR, NeurIPS paper pages, direct PDFs, and resource links such as GitHub/Hugging Face models or datasets.
+
+Legacy arXiv helpers remain available for older projects and manual recovery, but they are not the template-v2 multi-source entrypoint. Prefer `scripts/literature_workflow.py --action init-from-awesome`, `prepare-batch`, and `import-local-pdfs` for current work.
+
+---
+
 ## How to use it in Codex
 
 Install or place this repository as a Codex skill, then open a literature project folder in Codex.

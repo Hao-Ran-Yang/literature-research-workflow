@@ -27,6 +27,8 @@ The active workflow is current-only:
 
 - template-v2 layout;
 - `inventory/workflow_inventory.csv`;
+- `paper_id` is the canonical paper identity; `arxiv_id` is only an optional alias;
+- source identity, dedup keys, source roles/families, PDF status, and new safe filenames are classified through `scripts/source_adapters.py`;
 - `batches/accepted_artifacts.json` as the accepted artifact registry;
 - artifact lifecycle is `status = active | superseded | archived`;
 - one canonical `batch_skim_note` per batch;
@@ -104,6 +106,8 @@ python scripts/literature_harness.py --root . --action validate-project
 ```
 
 Use `--plan-only` before write-heavy actions when uncertain. Use `--allow-write` for writes and `--allow-network` plus explicit download intent for network/PDF operations.
+
+Legacy arXiv-specific helpers such as `build_phase1_inventory.py`, `collect_arxiv_pdfs.py`, `download_batch_node.mjs`, and `ensure_raw_papers_node.mjs` are retained for older arXiv-only projects and manual recovery. They are not the template-v2 multi-source main entrypoint.
 
 ## What To Read Next
 

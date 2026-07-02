@@ -14,6 +14,10 @@ Current projects are template-v2 only. `batches/accepted_artifacts.json` is the 
 
 This document is the detailed source of truth for the literature-review-centered research workflow. arXiv is one supported source family alongside OpenReview, ACL Anthology, PMLR, NeurIPS pages, official PDFs, local PDFs, and curated inventories.
 
+`paper_id` is the canonical paper identity throughout template-v2. `arxiv_id` is only an optional alias when a source can reliably identify an arXiv paper. All new paper IDs, dedup keys, source roles/families, safe filenames for newly generated files, and canonical `pdf_status` values are produced through `scripts/source_adapters.py`. The adapter is an identity/link classifier, not a webpage scraper; future source-specific parsers may exist independently, but their outputs must return to this contract.
+
+Canonical `pdf_status` values are `available`, `needs_pdf_review`, and `pdf_unavailable`. Use `available` only for a reliable public PDF URL or an existing managed/local PDF. Use `needs_pdf_review` when a paper-like item lacks a reliable PDF without network access. Reserve `pdf_unavailable` for resource-only items or cases with clear evidence that no PDF exists.
+
 Default flow:
 
 ```text
@@ -119,7 +123,7 @@ Current projects use strict registry checks: active notes, overviews, and candid
 
 ## Phase 1: Inventory, Taxonomy, And Batch Plan
 
-Phase 1 is intentionally unchanged.
+Phase 1 keeps the same workflow shape, but template-v2 inventory is multi-source and `paper_id`-first.
 
 Goal:
 
@@ -128,6 +132,8 @@ source -> inventory -> first-pass taxonomy -> Bxx batch plan -> phase1 report
 ```
 
 Inventory should preserve the existing CSV fields and metadata policy. Local no-metadata runs must stay explicitly metadata-unverified. Keep Phase 1 scaffolding minimal: source, scope, inventory, and report only.
+
+GitHub links, Hugging Face model/dataset/space links, project pages, and other resource links do not create standalone papers unless a primary paper identity can be determined from the same markdown table row, list item, or nearby titled block. Unassigned resource-only evidence should remain source evidence or be reported for review rather than forcing a paper identity.
 
 Exit condition: `phase1_inventory.csv` and `phase1_report.md` exist, batches are assigned, and uncertainties are explicit.
 

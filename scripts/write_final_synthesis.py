@@ -45,8 +45,9 @@ def batch_code(value: str) -> str:
 def index_notes(parsed: dict) -> dict[str, dict]:
     by_id = {}
     for paper in parsed["papers"]:
-        if paper.get("arxiv_id"):
-            by_id[paper["arxiv_id"].split("v", 1)[0]] = paper
+        key = paper_key(paper)
+        if key:
+            by_id[key] = paper
     return by_id
 
 
@@ -103,7 +104,7 @@ def merge_parsed_notes(note_inputs: list[tuple[str, Path]]) -> tuple[dict, dict[
         for paper in parsed["papers"]:
             item = dict(paper)
             item["synthesis_evidence_level"] = level
-            key = (paper.get("arxiv_id") or "").split("v", 1)[0]
+            key = paper_key(paper)
             if key:
                 merged[key] = item
             else:
@@ -163,6 +164,30 @@ def normalized_arxiv_id(value: str) -> str:
     return re.sub(r"v\d+$", "", value or "", flags=re.IGNORECASE)
 
 
+def normalized_paper_id(value: str) -> str:
+    value = str(value or "").strip()
+    if not value:
+        return ""
+    match = re.search(r"(?i)(?:arxiv:)?(\d{4}\.\d{4,5})(?:v\d+)?", value)
+    if match:
+        return f"arxiv:{match.group(1)}"
+    return value
+
+
+def paper_key(paper: dict) -> str:
+    return normalized_paper_id(paper.get("paper_id") or paper.get("arxiv_id") or "")
+
+
+def display_paper_id(paper: dict) -> str:
+    if paper.get("paper_id"):
+        return paper["paper_id"]
+    return normalized_arxiv_id(paper.get("arxiv_id", "")) if paper.get("arxiv_id") else ""
+
+
+def display_inventory_paper_id(row: dict) -> str:
+    return row.get("paper_id") or normalized_arxiv_id(row.get("arxiv_id", ""))
+
+
 def accepted_deep_failure_rows(root: Path, deep_manifest: list[dict]) -> list[list[str]]:
     data = read_json_if_exists(root / "accepted_failures.json")
     if not isinstance(data, dict) or not isinstance(data.get("phase3_deep_text"), list):
@@ -188,7 +213,7 @@ def collect_field(parsed: dict, field: str, limit: int = 40) -> list[list[str]]:
     for paper in parsed["papers"]:
         value = paper["fields"].get(field, "")
         if value:
-            rows.append([paper.get("batch", ""), paper.get("entry_title", ""), paper.get("arxiv_id", ""), short(value)])
+            rows.append([paper.get("batch", ""), paper.get("entry_title", ""), display_paper_id(paper), short(value)])
     return rows[:limit]
 
 
@@ -197,7 +222,7 @@ def collect_top_level_field(parsed: dict, field: str, limit: int = 40) -> list[l
     for paper in parsed["papers"]:
         value = paper.get(field, "")
         if value:
-            rows.append([paper.get("batch", ""), paper.get("entry_title", ""), paper.get("arxiv_id", ""), short(value)])
+            rows.append([paper.get("batch", ""), paper.get("entry_title", ""), display_paper_id(paper), short(value)])
     return rows[:limit]
 
 
@@ -208,7 +233,7 @@ def collect_limitations_and_assumptions(parsed: dict, limit: int = 40) -> list[l
         if not value:
             value = "; ".join(item for item in [paper.get("limitations_summary", ""), paper.get("assumptions", "")] if item)
         if value:
-            rows.append([paper.get("batch", ""), paper.get("entry_title", ""), paper.get("arxiv_id", ""), short(value)])
+            rows.append([paper.get("batch", ""), paper.get("entry_title", ""), display_paper_id(paper), short(value)])
     return rows[:limit]
 
 
@@ -267,7 +292,7 @@ def collect_selected_deep_judgments(parsed: dict, limit: int = 40) -> list[list[
         rows.append(
             [
                 paper.get("entry_title", ""),
-                paper.get("arxiv_id", ""),
+                display_paper_id(paper),
                 short(paper.get("research_question", "")),
                 short(paper.get("core_contribution", "") or paper.get("core_idea_summary", "")),
                 short(paper.get("main_caution", "")),
@@ -288,7 +313,7 @@ def collect_selected_deep_method_comparisons(parsed: dict, limit: int = 120) -> 
             rows.append(
                 [
                     paper.get("entry_title", ""),
-                    paper.get("arxiv_id", ""),
+                    display_paper_id(paper),
                     comparison.get("aspect", ""),
                     comparison.get("direct_baseline", ""),
                     comparison.get("representative_prior", ""),
@@ -343,7 +368,7 @@ def main() -> None:
         row
         for row in deep_manifest
         if row.get("status") not in {"exists", "extracted"}
-        and normalized_arxiv_id(str(row.get("arxiv_id", ""))) not in accepted_deep_failure_ids
+        and normalized_paper_id(row.get("paper_id") or row.get("arxiv_id") or "") not in accepted_deep_failure_ids
     ]
 
     category_counts = Counter(row.get("method_category", "") or "<missing>" for row in rows)
@@ -352,27 +377,27 @@ def main() -> None:
 
     matrix_rows = []
     for row in rows:
-        arxiv_id = (row.get("arxiv_id") or "").split("v", 1)[0]
-        note = note_by_id.get(arxiv_id, {})
+        row_id = normalized_paper_id(row.get("paper_id") or row.get("arxiv_id") or "")
+        note = note_by_id.get(row_id, {})
         matrix_rows.append(
             [
                 row.get("method_category", "") or "<missing>",
                 row.get("reading_batch", ""),
                 row.get("reading_priority", "") or "medium",
-                row.get("title", "") or note.get("entry_title", ""),
-                arxiv_id,
+                row.get("title", "") or row.get("canonical_title", "") or note.get("entry_title", ""),
+                display_inventory_paper_id(row),
                 "yes" if note else "no",
                 ", ".join(note.get("missing_fields", [])) if note else "not read",
             ]
         )
 
     review_rows = [
-        [paper.get("batch", ""), paper.get("entry_title", ""), paper.get("arxiv_id", ""), ", ".join(paper.get("missing_fields", []))]
+        [paper.get("batch", ""), paper.get("entry_title", ""), display_paper_id(paper), ", ".join(paper.get("missing_fields", []))]
         for paper in parsed["papers"]
         if paper["quality_flags"]["needs_review"]
     ]
     diagram_review_rows = [
-        [paper.get("batch", ""), paper.get("entry_title", ""), paper.get("arxiv_id", ""), paper.get("diagram_verification", "") or "missing"]
+        [paper.get("batch", ""), paper.get("entry_title", ""), display_paper_id(paper), paper.get("diagram_verification", "") or "missing"]
         for paper in parsed["papers"]
         if paper.get("diagram_verification", "").lower() not in {"", "verified"}
     ]
@@ -390,7 +415,7 @@ def main() -> None:
                 f"- Reading-note entries parsed: {parsed['summary']['paper_entries']}",
                 f"- Note entries needing review: {parsed['summary']['needs_review']}",
                 f"- Evidence levels: skim={source_counts.get('skim', 0)}, selected-deep={source_counts.get('selected-deep', 0)}",
-                "- Synthesis policy: selected deep notes override skim notes for the same arXiv ID; skim-level conclusions remain provisional.",
+                "- Synthesis policy: selected deep notes override skim notes for the same paper_id; skim-level conclusions remain provisional.",
                 "",
                 "## Method Families",
                 "",
@@ -398,11 +423,11 @@ def main() -> None:
                 "",
                 "## Problem Landscape",
                 "",
-                md_table(["Batch", "Paper", "arXiv", "Problem statement"], collect_top_level_field(parsed, "problem_statement")),
+                md_table(["Batch", "Paper", "Paper ID", "Problem statement"], collect_top_level_field(parsed, "problem_statement")),
                 "",
                 "## Mathematical Formulations",
                 "",
-                md_table(["Batch", "Paper", "arXiv", "Mathematical view"], collect_top_level_field(parsed, "mathematical_view")),
+                md_table(["Batch", "Paper", "Paper ID", "Mathematical view"], collect_top_level_field(parsed, "mathematical_view")),
                 "",
                 "## Existing Method Families",
                 "",
@@ -418,33 +443,33 @@ def main() -> None:
                 "## Selected Deep Research Judgments",
                 "",
                 md_table(
-                    ["Paper", "arXiv", "Research question", "Core contribution", "Main caution", "What is solid", "Best follow-up", "Final decision"],
+                    ["Paper", "Paper ID", "Research question", "Core contribution", "Main caution", "What is solid", "Best follow-up", "Final decision"],
                     collect_selected_deep_judgments(parsed),
                 ),
                 "",
                 "## Selected Deep Method Comparisons",
                 "",
                 md_table(
-                    ["Paper", "arXiv", "Aspect", "Direct baseline", "Representative prior", "This paper"],
+                    ["Paper", "Paper ID", "Aspect", "Direct baseline", "Representative prior", "This paper"],
                     collect_selected_deep_method_comparisons(parsed),
                 ),
                 "",
                 "## Recurring Motivations",
                 "",
-                md_table(["Batch", "Paper", "arXiv", "Motivation"], collect_top_level_field(parsed, "motivation")),
+                md_table(["Batch", "Paper", "Paper ID", "Motivation"], collect_top_level_field(parsed, "motivation")),
                 "",
                 "## Remaining Unresolved Problems",
                 "",
-                md_table(["Batch", "Paper", "arXiv", "Unresolved aspect"], collect_top_level_field(parsed, "remaining_unresolved_aspects")),
+                md_table(["Batch", "Paper", "Paper ID", "Unresolved aspect"], collect_top_level_field(parsed, "remaining_unresolved_aspects")),
                 "",
                 "## Research Opportunities",
                 "",
-                md_table(["Batch", "Paper", "arXiv", "Possible extension"], collect_field(parsed, "possible_extensions")),
+                md_table(["Batch", "Paper", "Paper ID", "Possible extension"], collect_field(parsed, "possible_extensions")),
                 "",
                 "## Method-Paper Matrix",
                 "",
                 md_table(
-                    ["Method", "Batch", "Priority", "Paper", "arXiv", "Read", "Missing note fields"],
+                    ["Method", "Batch", "Priority", "Paper", "Paper ID", "Read", "Missing note fields"],
                     matrix_rows,
                 ),
                 "",
@@ -466,8 +491,8 @@ def main() -> None:
             row.get("reading_priority", "") or "medium",
             row.get("reading_batch", ""),
             row.get("method_category", "") or "<missing>",
-            row.get("title", ""),
-            row.get("arxiv_id", ""),
+            row.get("title", "") or row.get("canonical_title", ""),
+            display_inventory_paper_id(row),
         ]
         for row in rows
         if (row.get("reading_priority") or "").lower() in {"core", "high"}
@@ -480,7 +505,7 @@ def main() -> None:
                 "",
                 "## Must-Read Candidates",
                 "",
-                md_table(["Priority", "Batch", "Method", "Paper", "arXiv"], key_rows),
+                md_table(["Priority", "Batch", "Method", "Paper", "Paper ID"], key_rows),
                 "",
                 "## Batch Coverage",
                 "",
@@ -503,11 +528,11 @@ def main() -> None:
                 "",
                 "## Paper-Stated Limitations And Assumptions",
                 "",
-                md_table(["Batch", "Paper", "arXiv", "Limitation/assumption"], collect_limitations_and_assumptions(parsed)),
+                md_table(["Batch", "Paper", "Paper ID", "Limitation/assumption"], collect_limitations_and_assumptions(parsed)),
                 "",
                 "## Possible Extensions Mentioned In Notes",
                 "",
-                md_table(["Batch", "Paper", "arXiv", "Possible extension"], collect_field(parsed, "possible_extensions")),
+                md_table(["Batch", "Paper", "Paper ID", "Possible extension"], collect_field(parsed, "possible_extensions")),
                 "",
                 "## Inferred Research Ideas",
                 "",
@@ -530,7 +555,7 @@ def main() -> None:
                 "",
                 "## Notes Needing Review",
                 "",
-                md_table(["Batch", "Paper", "arXiv", "Missing fields"], review_rows),
+                md_table(["Batch", "Paper", "Paper ID", "Missing fields"], review_rows),
                 "",
                 "## Metadata",
                 "",
@@ -547,9 +572,9 @@ def main() -> None:
                 "## Phase 3 Candidate Review",
                 "",
                 md_table(
-                    ["Paper", "arXiv", "Recommendation", "Selection status"],
+                    ["Paper", "Paper ID", "Recommendation", "Selection status"],
                     [
-                        [row.get("title", ""), row.get("arxiv_id", ""), row.get("recommendation", ""), row.get("selected_for_phase3", "") or "undecided"]
+                        [row.get("title", "") or row.get("canonical_title", ""), display_inventory_paper_id(row), row.get("recommendation", ""), row.get("selected_for_phase3", "") or "undecided"]
                         for row in undecided_candidates
                     ],
                 ),
@@ -557,8 +582,8 @@ def main() -> None:
                 "## Phase 3 Extraction Failures",
                 "",
                 md_table(
-                    ["arXiv", "Status", "Error"],
-                    [[row.get("arxiv_id", ""), row.get("status", ""), row.get("error", "")] for row in deep_failures],
+                    ["Paper ID", "Status", "Error"],
+                    [[display_inventory_paper_id(row), row.get("status", ""), row.get("error", "")] for row in deep_failures],
                 ),
                 "",
                 *(
@@ -575,7 +600,7 @@ def main() -> None:
                 ),
                 "## Method Diagrams Needing Review",
                 "",
-                md_table(["Batch", "Paper", "arXiv", "Diagram verification"], diagram_review_rows),
+                md_table(["Batch", "Paper", "Paper ID", "Diagram verification"], diagram_review_rows),
                 "",
             ]
         ),

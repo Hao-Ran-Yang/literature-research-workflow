@@ -33,13 +33,13 @@ TEMPLATE_V2_DIRS = [
 ]
 WORKFLOW_INVENTORY_HEADER = (
     "schema_version,paper_id,dedup_key,arxiv_id,canonical_title,canonical_source,"
-    "official_url,public_pdf_url,source_type,source_role,venue,year,authors,abstract,"
+    "official_url,public_pdf_url,source_family,source_family_id,source_type,source_role,venue,year,authors,abstract,"
     "section,method_category,application_tag,reading_batch,reading_priority,"
     "metadata_status,metadata_evidence,pdf_status,extraction_status,packet_status,notes\n"
 )
 SOURCE_ITEMS_HEADER = (
     "schema_version,source_item_id,paper_id,dedup_key,source_snapshot_id,source_file,"
-    "source_section,source_line,source_item_text,source_url,link_type,title_hint,"
+    "source_section,source_line,source_item_text,source_url,link_type,source_role,source_family,source_family_id,title_hint,"
     "venue_hint,year_hint,tag_hint,created_at\n"
 )
 REPRESENTATIVE_HEADER = (
